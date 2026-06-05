@@ -175,6 +175,30 @@ export function sliceNext24(hourly, currentIso) {
   return out;
 }
 
+// Aggregate hourly entries into fixed-size blocks (e.g. 3-hourly). Each block
+// summarizes its window so nothing between samples is lost: average temp,
+// max precip/wind, and the most significant condition (highest WMO code).
+export function groupHours(hours, size = 3) {
+  const avg = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const blocks = [];
+  for (let i = 0; i < hours.length; i += size) {
+    const chunk = hours.slice(i, i + size);
+    const temps = chunk.map((h) => h.temp).filter(Number.isFinite);
+    const precs = chunk.map((h) => h.precip).filter(Number.isFinite);
+    const winds = chunk.map((h) => h.wind).filter(Number.isFinite);
+    const codes = chunk.map((h) => h.code).filter(Number.isFinite);
+    blocks.push({
+      time: chunk[0].time,
+      isDay: chunk[0].isDay,
+      temp: temps.length ? avg(temps) : undefined,
+      precip: precs.length ? Math.max(...precs) : undefined,
+      wind: winds.length ? Math.max(...winds) : undefined,
+      code: codes.length ? Math.max(...codes) : chunk[0].code,
+    });
+  }
+  return blocks;
+}
+
 const CURRENT = [
   'temperature_2m', 'relative_humidity_2m', 'apparent_temperature',
   'is_day', 'precipitation', 'weather_code', 'wind_speed_10m',

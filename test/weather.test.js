@@ -89,7 +89,37 @@ test('rangeBar computes left/width percentages', () => {
   assert.equal(flat.width, 100);
 });
 
-import { sliceNext24, lineGraph } from '../weather.js';
+import { sliceNext24, groupHours, lineGraph } from '../weather.js';
+
+test('groupHours aggregates into blocks (avg temp, max precip/wind, worst code)', () => {
+  const hours = [
+    { time: 'T0', isDay: 1, temp: 60, precip: 10, wind: 4, code: 1 },
+    { time: 'T1', isDay: 1, temp: 66, precip: 60, wind: 9, code: 61 },
+    { time: 'T2', isDay: 0, temp: 63, precip: 20, wind: 6, code: 2 },
+    { time: 'T3', isDay: 0, temp: 70, precip: 0, wind: 5, code: 0 },
+  ];
+  const blocks = groupHours(hours, 3);
+  assert.equal(blocks.length, 2);          // 3 + 1
+  assert.equal(blocks[0].time, 'T0');      // block label = first hour
+  assert.equal(blocks[0].isDay, 1);
+  assert.equal(blocks[0].temp, 63);        // avg(60,66,63)
+  assert.equal(blocks[0].precip, 60);      // max precip in window
+  assert.equal(blocks[0].wind, 9);         // max wind in window
+  assert.equal(blocks[0].code, 61);        // most significant condition
+  assert.equal(blocks[1].temp, 70);        // trailing partial block
+});
+
+test('groupHours tolerates missing values without NaN', () => {
+  const hours = [
+    { time: 'T0', isDay: 1, temp: null, precip: undefined, wind: NaN, code: 1 },
+    { time: 'T1', isDay: 1, temp: 70, precip: 30, wind: 8, code: 2 },
+  ];
+  const [b] = groupHours(hours, 3);
+  assert.equal(b.temp, 70);                 // the one finite temp
+  assert.equal(b.precip, 30);
+  assert.equal(b.wind, 8);
+  assert.equal(b.code, 2);
+});
 
 test('lineGraph maps values to evenly spaced points', () => {
   const geom = { pitch: 68, offsetX: 29, height: 40, padY: 6 };

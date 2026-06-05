@@ -1,5 +1,5 @@
 import {
-  describeWeather, sliceNext24, degToCompass, unitConfig, lineGraph,
+  describeWeather, sliceNext24, groupHours, degToCompass, unitConfig, lineGraph,
   rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
 } from './weather.js';
@@ -215,11 +215,12 @@ function setUpdated(date) {
 }
 
 function renderAll(data, name, updatedAt) {
-  lastHours = sliceNext24(data.hourly, data.current.time);
+  const hours = sliceNext24(data.hourly, data.current.time);
+  lastHours = groupHours(hours, 3); // 3-hour blocks for the strip
   renderHero(data.current, data.daily, name);
   renderHourly(lastHours);
   renderDaily(data.daily);
-  renderTiles(data.current, data.daily, lastHours[0]);
+  renderTiles(data.current, data.daily, hours[0]); // raw current hour for tiles
   $('empty').hidden = true;
   showStatus('');
   setUpdated(updatedAt);
