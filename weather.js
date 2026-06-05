@@ -87,3 +87,23 @@ export function rangeBar(min, max, weekMin, weekMax) {
   const width = ((max - min) / span) * 100;
   return { left: Math.round(left), width: Math.round(width) };
 }
+
+export function sliceNext24(hourly, currentIso) {
+  const target = floorToHour(currentIso);
+  let start = hourly.time.indexOf(target);
+  if (start < 0) start = 0;
+  const end = Math.min(start + 24, hourly.time.length);
+  const out = [];
+  for (let i = start; i < end; i++) {
+    out.push({
+      time: hourly.time[i],
+      temp: hourly.temperature_2m[i],
+      code: hourly.weather_code[i],
+      isDay: hourly.is_day[i],
+      precip: hourly.precipitation_probability[i],
+      uv: hourly.uv_index[i],
+      visibility: hourly.visibility[i],
+    });
+  }
+  return out;
+}

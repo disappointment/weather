@@ -66,3 +66,47 @@ test('rangeBar computes left/width percentages', () => {
   assert.equal(flat.left, 0);
   assert.equal(flat.width, 100);
 });
+
+import { sliceNext24 } from '../weather.js';
+
+function fakeHourly(startHour, n) {
+  const time = [], temperature_2m = [], weather_code = [],
+        is_day = [], precipitation_probability = [],
+        uv_index = [], visibility = [];
+  for (let i = 0; i < n; i++) {
+    const h = String((startHour + i) % 24).padStart(2, '0');
+    const day = Math.floor((startHour + i) / 24);
+    time.push(`2026-06-${String(4 + day).padStart(2, '0')}T${h}:00`);
+    temperature_2m.push(60 + i);
+    weather_code.push(i % 3);
+    is_day.push(1);
+    precipitation_probability.push(i);
+    uv_index.push(i % 11);
+    visibility.push(16090);
+  }
+  return { time, temperature_2m, weather_code, is_day,
+           precipitation_probability, uv_index, visibility };
+}
+
+test('sliceNext24 returns 24 entries starting at the current hour', () => {
+  const hourly = fakeHourly(0, 48);
+  const out = sliceNext24(hourly, '2026-06-04T05:30');
+  assert.equal(out.length, 24);
+  assert.equal(out[0].time, '2026-06-04T05:00');
+  assert.equal(out[0].temp, 65);
+  assert.equal(out[0].precip, 5);
+  assert.equal(out[0].uv, 5);
+  assert.equal(out[0].visibility, 16090);
+});
+
+test('sliceNext24 clamps when near the end of the array', () => {
+  const hourly = fakeHourly(0, 10);
+  const out = sliceNext24(hourly, '2026-06-04T08:00');
+  assert.equal(out.length, 2); // only hours 08,09 remain
+});
+
+test('sliceNext24 falls back to index 0 when time not found', () => {
+  const hourly = fakeHourly(0, 24);
+  const out = sliceNext24(hourly, '1999-01-01T00:00');
+  assert.equal(out[0].time, '2026-06-04T00:00');
+});
