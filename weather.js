@@ -65,3 +65,25 @@ export function describeWeather(code, isDay) {
     theme: GROUP_THEME[group](day),
   };
 }
+
+export function floorToHour(iso) {
+  return iso.slice(0, 13) + ':00';
+}
+
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+export function degToCompass(deg) {
+  const i = Math.round((((deg % 360) + 360) % 360) / 45) % 8;
+  return COMPASS[i];
+}
+
+export function metersToMiles(m) {
+  return Math.round((m / 1609.344) * 10) / 10;
+}
+
+export function rangeBar(min, max, weekMin, weekMax) {
+  const span = weekMax - weekMin;
+  if (span <= 0) return { left: 0, width: 100 };
+  const left = ((min - weekMin) / span) * 100;
+  const width = ((max - min) / span) * 100;
+  return { left: Math.round(left), width: Math.round(width) };
+}

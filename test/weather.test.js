@@ -33,3 +33,36 @@ test('describeWeather: unknown code falls back', () => {
   assert.equal(r.icon, 'cloud');
   assert.equal(r.theme, 'cloudy');
 });
+
+import {
+  floorToHour, degToCompass, metersToMiles, rangeBar,
+} from '../weather.js';
+
+test('floorToHour truncates to the hour', () => {
+  assert.equal(floorToHour('2026-06-04T21:15'), '2026-06-04T21:00');
+  assert.equal(floorToHour('2026-06-04T21:00'), '2026-06-04T21:00');
+});
+
+test('degToCompass maps to 8-point compass', () => {
+  assert.equal(degToCompass(0), 'N');
+  assert.equal(degToCompass(45), 'NE');
+  assert.equal(degToCompass(90), 'E');
+  assert.equal(degToCompass(200), 'S');
+  assert.equal(degToCompass(359), 'N');
+});
+
+test('metersToMiles rounds to 1 decimal', () => {
+  assert.equal(metersToMiles(1609), 1);
+  assert.equal(metersToMiles(16090), 10);
+  assert.equal(metersToMiles(8045), 5);
+});
+
+test('rangeBar computes left/width percentages', () => {
+  const b = rangeBar(60, 78, 55, 80);
+  assert.equal(b.left, 20);   // (60-55)/(80-55)=0.2
+  assert.equal(b.width, 72);  // (78-60)/(80-55)=0.72
+  // degenerate week range -> full-width bar, no NaN
+  const flat = rangeBar(70, 70, 70, 70);
+  assert.equal(flat.left, 0);
+  assert.equal(flat.width, 100);
+});
