@@ -158,6 +158,7 @@ async function doSearch(query) {
   if (!query.trim()) { list.hidden = true; return; }
   try {
     const res = await fetch(geocodeUrl(query));
+    if (!res.ok) throw new Error('search failed');
     const places = parsePlaces(await res.json());
     list.innerHTML = '';
     if (!places.length) {
@@ -176,7 +177,8 @@ async function doSearch(query) {
     }
     list.hidden = false;
   } catch {
-    list.hidden = true;
+    list.innerHTML = '<li class="muted">Search failed — try again</li>';
+    list.hidden = false;
   }
 }
 
