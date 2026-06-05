@@ -1,5 +1,5 @@
 import {
-  describeWeather, sliceNext24, degToCompass, unitConfig, tempGraph,
+  describeWeather, sliceNext24, degToCompass, unitConfig, lineGraph,
   rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
 } from './weather.js';
@@ -8,10 +8,13 @@ const $ = (id) => document.getElementById(id);
 const LS_LOC = 'weather.location';
 const LS_UNIT = 'weather.unit';
 const LS_DATA = 'weather.lastData';
+const LS_METRIC = 'weather.metric';
 
 let unit = localStorage.getItem(LS_UNIT) || 'fahrenheit';
 let location_ = loadJSON(LS_LOC); // { name, lat, lon } | null
 let lastData = null;
+let lastHours = [];               // sliced hourly data, kept for metric re-renders
+let hourlyMetric = localStorage.getItem(LS_METRIC) || 'temp';
 let refreshTimer = null;
 let forecastController = null; // aborts in-flight forecast fetches
 let searchController = null;    // aborts in-flight search fetches
@@ -83,15 +86,38 @@ const HOUR_GAP = 10;
 const GRAPH_H = 40;
 const GRAPH_PAD = 6;
 
-function tempGraphSvg(hours) {
-  const temps = hours.map((h) => h.temp);
+// Hourly graph metrics (Google-style toggle). Each maps an hour to a value,
+// formats the per-cell label, and pins the graph's y-domain where it matters.
+const METRICS = {
+  temp: {
+    label: 'Temp',
+    value: (h) => h.temp,
+    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}°` : '—'),
+    domain: () => ({}), // auto min/max — temperature is about the shape
+  },
+  precip: {
+    label: 'Precip',
+    value: (h) => h.precip,
+    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}%` : '—'),
+    domain: () => ({ min: 0, max: 100 }), // probability is absolute 0–100
+  },
+  wind: {
+    label: 'Wind',
+    value: (h) => h.wind,
+    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}` : '—'),
+    domain: () => ({ min: 0 }), // baseline at calm
+  },
+};
+
+function metricGraphSvg(hours, metric) {
+  const m = METRICS[metric] || METRICS.temp;
   const geom = {
     pitch: HOUR_CELL + HOUR_GAP,
     offsetX: HOUR_CELL / 2,
     height: GRAPH_H,
     padY: GRAPH_PAD,
   };
-  const g = tempGraph(temps, geom);
+  const g = lineGraph(hours.map(m.value), geom, m.domain());
   if (!g.points.length) return ''; // not enough data to draw a curve
   const width = HOUR_CELL + (HOUR_CELL + HOUR_GAP) * (hours.length - 1);
   const dots = g.points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="1.7"/>`).join('');
@@ -106,9 +132,10 @@ function tempGraphSvg(hours) {
 
 function renderHourly(hours) {
   const strip = $('hourly-strip');
-  // Temperature curve as a ribbon across the top of the strip; it scrolls with
-  // the cells because it shares the scroll container and matches their pitch.
-  strip.innerHTML = tempGraphSvg(hours);
+  const m = METRICS[hourlyMetric] || METRICS.temp;
+  // Metric curve as a ribbon across the top of the strip; it scrolls with the
+  // cells because it shares the scroll container and matches their pitch.
+  strip.innerHTML = metricGraphSvg(hours, hourlyMetric);
   const frag = document.createDocumentFragment();
   hours.forEach((h, i) => {
     const d = describeWeather(h.code, h.isDay);
@@ -117,12 +144,28 @@ function renderHourly(hours) {
     cell.innerHTML = `
       <div class="h-time">${i === 0 ? 'Now' : formatHourLabel(h.time)}</div>
       <svg data-icon="${d.icon}" viewBox="0 0 24 24" aria-hidden="true"><use href="${iconHref(d.icon)}"></use></svg>
-      <div class="h-temp">${Number.isFinite(h.temp) ? Math.round(h.temp) + '°' : '—'}</div>
-      <div class="h-precip">${h.precip > 0 ? h.precip + '%' : ''}</div>`;
+      <div class="h-val">${m.cell(m.value(h))}</div>`;
     frag.appendChild(cell);
   });
   strip.appendChild(frag);
+  syncMetricToggle();
   show('hourly-card');
+}
+
+function syncMetricToggle() {
+  document.querySelectorAll('#metric-toggle .seg-btn').forEach((btn) => {
+    const on = btn.dataset.metric === hourlyMetric;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+function setMetric(metric) {
+  if (!METRICS[metric]) return;
+  hourlyMetric = metric;
+  localStorage.setItem(LS_METRIC, metric);
+  if (lastHours.length) renderHourly(lastHours);
+  else syncMetricToggle();
 }
 
 function renderDaily(daily) {
@@ -172,11 +215,11 @@ function setUpdated(date) {
 }
 
 function renderAll(data, name, updatedAt) {
-  const hours = sliceNext24(data.hourly, data.current.time);
+  lastHours = sliceNext24(data.hourly, data.current.time);
   renderHero(data.current, data.daily, name);
-  renderHourly(hours);
+  renderHourly(lastHours);
   renderDaily(data.daily);
-  renderTiles(data.current, data.daily, hours[0]);
+  renderTiles(data.current, data.daily, lastHours[0]);
   $('empty').hidden = true;
   showStatus('');
   setUpdated(updatedAt);
@@ -383,6 +426,10 @@ $('search-input').addEventListener('keydown', (e) => {
 $('geo-btn').addEventListener('click', useMyLocation);
 $('unit-btn').addEventListener('click', toggleUnit);
 $('refresh-btn').addEventListener('click', () => refresh());
+$('metric-toggle').addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (btn) setMetric(btn.dataset.metric);
+});
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.search')) closeResults();
 });
@@ -398,6 +445,7 @@ if (location_) {
 }
 
 setUnitLabel();
+syncMetricToggle();
 hydrateFromCache();
 refresh();
 refreshTimer = setInterval(refresh, 15 * 60 * 1000);

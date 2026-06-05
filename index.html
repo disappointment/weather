@@ -78,7 +78,14 @@
     </section>
 
     <section id="hourly-card" class="card hourly" hidden>
-      <h2 class="card-title">Hourly</h2>
+      <div class="card-head">
+        <h2 class="card-title">Hourly</h2>
+        <div class="seg" id="metric-toggle" role="group" aria-label="Graph metric">
+          <button class="seg-btn" type="button" data-metric="temp" aria-pressed="true">Temp</button>
+          <button class="seg-btn" type="button" data-metric="precip" aria-pressed="false">Precip</button>
+          <button class="seg-btn" type="button" data-metric="wind" aria-pressed="false">Wind</button>
+        </div>
+      </div>
       <div class="hourly-strip" id="hourly-strip"></div>
     </section>
 

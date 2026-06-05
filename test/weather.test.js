@@ -89,16 +89,16 @@ test('rangeBar computes left/width percentages', () => {
   assert.equal(flat.width, 100);
 });
 
-import { sliceNext24, tempGraph } from '../weather.js';
+import { sliceNext24, lineGraph } from '../weather.js';
 
-test('tempGraph maps temps to evenly spaced points', () => {
+test('lineGraph maps values to evenly spaced points', () => {
   const geom = { pitch: 68, offsetX: 29, height: 40, padY: 6 };
-  const g = tempGraph([60, 80, 70], geom);
+  const g = lineGraph([60, 80, 70], geom);
   assert.equal(g.points.length, 3);
   assert.deepEqual(g.points.map((p) => p.x), [29, 97, 165]);
-  // min temp -> bottom of band (padY + usable = 6 + 28 = 34)
+  // min value -> bottom of band (padY + usable = 6 + 28 = 34)
   assert.equal(g.points[0].y, 34);
-  // max temp -> top of band (padY = 6)
+  // max value -> top of band (padY = 6)
   assert.equal(g.points[1].y, 6);
   assert.equal(g.min, 60);
   assert.equal(g.max, 80);
@@ -106,33 +106,47 @@ test('tempGraph maps temps to evenly spaced points', () => {
   assert.ok(g.area.endsWith('Z'));
 });
 
-test('tempGraph handles a flat day without NaN', () => {
-  const g = tempGraph([70, 70, 70], { pitch: 68, offsetX: 29, height: 40, padY: 6 });
+test('lineGraph honors a fixed domain and clamps to it', () => {
+  const geom = { pitch: 68, offsetX: 29, height: 40, padY: 6 };
+  // precip-style 0..100 domain: 0 sits at the bottom, 100 at the top
+  const g = lineGraph([0, 50, 100], geom, { min: 0, max: 100 });
+  assert.equal(g.min, 0);
+  assert.equal(g.max, 100);
+  assert.equal(g.points[0].y, 34); // 0%  -> bottom
+  assert.equal(g.points[1].y, 20); // 50% -> middle (6 + 0.5*28 = 20)
+  assert.equal(g.points[2].y, 6);  // 100%-> top
+  // values beyond the domain are clamped (no overshoot)
+  const c = lineGraph([0, 200], geom, { min: 0, max: 100 });
+  assert.equal(c.points[1].y, 6);
+});
+
+test('lineGraph handles a flat series without NaN', () => {
+  const g = lineGraph([70, 70, 70], { pitch: 68, offsetX: 29, height: 40, padY: 6 });
   assert.ok(g.points.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)));
 });
 
-test('tempGraph returns empty paths for no data', () => {
-  const g = tempGraph([], { pitch: 68, offsetX: 29, height: 40, padY: 6 });
+test('lineGraph returns empty paths for no data', () => {
+  const g = lineGraph([], { pitch: 68, offsetX: 29, height: 40, padY: 6 });
   assert.deepEqual(g.points, []);
   assert.equal(g.line, '');
   assert.equal(g.area, '');
 });
 
-test('tempGraph skips non-finite temps and keeps x at the original index', () => {
+test('lineGraph skips non-finite values and keeps x at the original index', () => {
   const geom = { pitch: 68, offsetX: 29, height: 40, padY: 6 };
   // index 1 is missing -> dropped, but indices 0 and 2 keep their x positions
-  const g = tempGraph([60, null, 80], geom);
+  const g = lineGraph([60, null, 80], geom);
   assert.equal(g.points.length, 2);
   assert.deepEqual(g.points.map((p) => p.x), [29, 165]);
   assert.ok(g.points.every((p) => Number.isFinite(p.y)));
   // fewer than 2 valid points -> no curve
-  assert.deepEqual(tempGraph([NaN, undefined, 70], geom).points, []);
+  assert.deepEqual(lineGraph([NaN, undefined, 70], geom).points, []);
 });
 
 function fakeHourly(startHour, n) {
   const time = [], temperature_2m = [], weather_code = [],
         is_day = [], precipitation_probability = [],
-        uv_index = [], visibility = [];
+        uv_index = [], visibility = [], wind_speed_10m = [];
   for (let i = 0; i < n; i++) {
     const h = String((startHour + i) % 24).padStart(2, '0');
     const day = Math.floor((startHour + i) / 24);
@@ -143,9 +157,10 @@ function fakeHourly(startHour, n) {
     precipitation_probability.push(i);
     uv_index.push(i % 11);
     visibility.push(16090);
+    wind_speed_10m.push(5 + i);
   }
   return { time, temperature_2m, weather_code, is_day,
-           precipitation_probability, uv_index, visibility };
+           precipitation_probability, uv_index, visibility, wind_speed_10m };
 }
 
 test('sliceNext24 returns 24 entries starting at the current hour', () => {
@@ -157,6 +172,7 @@ test('sliceNext24 returns 24 entries starting at the current hour', () => {
   assert.equal(out[0].precip, 5);
   assert.equal(out[0].uv, 5);
   assert.equal(out[0].visibility, 16090);
+  assert.equal(out[0].wind, 10);
 });
 
 test('sliceNext24 clamps when near the end of the array', () => {

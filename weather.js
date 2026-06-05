@@ -106,27 +106,28 @@ export function rangeBar(min, max, weekMin, weekMax) {
   return { left: Math.round(left), width: Math.round(width) };
 }
 
-// Build SVG path data for a temperature sparkline over evenly spaced points.
-// geom: { pitch, offsetX, height, padY }. Returns smooth line + filled area
-// paths plus the raw points, so the caller just drops them into an <svg>.
-export function tempGraph(temps, geom) {
+// Build SVG path data for a sparkline over evenly spaced values (temp, precip,
+// wind, ...). geom: { pitch, offsetX, height, padY }. domain optionally pins
+// min/max (e.g. precip 0..100); otherwise the data's own range is used.
+// Returns smooth line + filled area paths plus the raw points.
+export function lineGraph(values, geom, domain = {}) {
   const { pitch, offsetX, height, padY } = geom;
-  // Skip missing/non-numeric temps (API gaps) but keep x tied to the original
-  // hour index so the curve stays aligned with the cells. Need >=2 to draw.
-  const valid = temps
+  // Skip missing/non-numeric values (API gaps) but keep x tied to the original
+  // index so the curve stays aligned with the cells. Need >=2 to draw.
+  const valid = values
     .map((t, i) => ({ t, i }))
     .filter((e) => Number.isFinite(e.t));
   if (valid.length < 2) return { line: '', area: '', points: [], min: 0, max: 0 };
   const ts = valid.map((e) => e.t);
-  const min = Math.min(...ts);
-  const max = Math.max(...ts);
-  const span = max - min || 1; // avoid divide-by-zero on a flat day
+  const min = domain.min ?? Math.min(...ts);
+  const max = domain.max ?? Math.max(...ts);
+  const span = max - min || 1; // avoid divide-by-zero on a flat series
   const usable = height - 2 * padY;
   const r = (v) => Math.round(v * 100) / 100;
-  const points = valid.map(({ t, i }) => ({
-    x: r(offsetX + pitch * i),
-    y: r(padY + (1 - (t - min) / span) * usable),
-  }));
+  const points = valid.map(({ t, i }) => {
+    const f = Math.min(1, Math.max(0, (t - min) / span)); // clamp into domain
+    return { x: r(offsetX + pitch * i), y: r(padY + (1 - f) * usable) };
+  });
   const line = smoothPath(points);
   const last = points[points.length - 1];
   const area = `${line} L ${last.x} ${height} L ${points[0].x} ${height} Z`;
@@ -166,6 +167,7 @@ export function sliceNext24(hourly, currentIso) {
       code: hourly.weather_code[i],
       isDay: hourly.is_day[i],
       precip: hourly.precipitation_probability[i],
+      wind: hourly.wind_speed_10m?.[i],
       uv: hourly.uv_index[i],
       visibility: hourly.visibility[i],
     });
@@ -181,7 +183,7 @@ const CURRENT = [
 
 const HOURLY = [
   'temperature_2m', 'weather_code', 'precipitation_probability',
-  'is_day', 'uv_index', 'visibility',
+  'is_day', 'uv_index', 'visibility', 'wind_speed_10m',
 ].join(',');
 
 const DAILY = [

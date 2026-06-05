@@ -419,6 +419,50 @@ button {
   text-transform: uppercase;
 }
 
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.card-head .card-title {
+  margin: 0;
+}
+
+/* Segmented metric toggle (Temp / Precip / Wind) */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.16);
+}
+
+.seg-btn {
+  border: 0;
+  padding: 5px 11px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.seg-btn.active {
+  color: var(--fg);
+  background: var(--card-strong);
+  box-shadow: var(--inner-shadow);
+}
+
+.seg-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent), transparent 50%);
+  outline-offset: 1px;
+}
+
 /* Hourly */
 .hourly-strip {
   position: relative;
@@ -461,9 +505,9 @@ button {
 
 .hour {
   flex: 0 0 58px;
-  min-height: 112px;
+  min-height: 104px;
   display: grid;
-  grid-template-rows: 18px 32px 20px 16px;
+  grid-template-rows: 18px 32px 20px;
   place-items: center;
   gap: 6px;
   padding: 10px 6px;
@@ -472,8 +516,7 @@ button {
   scroll-snap-align: start;
 }
 
-.hour .h-time,
-.hour .h-precip {
+.hour .h-time {
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
@@ -486,7 +529,7 @@ button {
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.12));
 }
 
-.hour .h-temp {
+.hour .h-val {
   font-size: 16px;
   font-weight: 750;
 }
