@@ -54,6 +54,7 @@ function renderHero(cur, daily, name) {
   setTheme(d.theme);
   $('place-name').textContent = name;
   $('hero-temp').textContent = Math.round(cur.temperature_2m);
+  $('hero-icon-use').closest('svg').dataset.icon = d.icon;
   $('hero-icon-use').setAttribute('href', iconHref(d.icon));
   $('hero-condition').textContent = d.label;
   $('hero-feels').textContent = `Feels ${Math.round(cur.apparent_temperature)}°`;
@@ -71,7 +72,7 @@ function renderHourly(hours) {
     cell.className = 'hour';
     cell.innerHTML = `
       <div class="h-time">${i === 0 ? 'Now' : formatHourLabel(h.time)}</div>
-      <svg><use href="${iconHref(d.icon)}"></use></svg>
+      <svg data-icon="${d.icon}"><use href="${iconHref(d.icon)}"></use></svg>
       <div class="h-temp">${Math.round(h.temp)}°</div>
       <div class="h-precip">${h.precip > 0 ? h.precip + '%' : ''}</div>`;
     strip.appendChild(cell);
@@ -93,7 +94,7 @@ function renderDaily(daily) {
     row.className = 'day-row';
     row.innerHTML = `
       <span class="d-name">${i === 0 ? 'Today' : formatWeekday(iso)}</span>
-      <svg><use href="${iconHref(d.icon)}"></use></svg>
+      <svg data-icon="${d.icon}"><use href="${iconHref(d.icon)}"></use></svg>
       <span class="d-precip">${precip > 0 ? precip + '%' : ''}</span>
       <span class="day-range">
         <span class="range-lo">${Math.round(daily.temperature_2m_min[i])}°</span>

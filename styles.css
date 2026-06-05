@@ -262,8 +262,14 @@ button {
 }
 
 .icon-btn {
-  font-size: 22px;
+  padding: 0;
   line-height: 1;
+}
+
+.geo-icon {
+  width: 22px;
+  height: 22px;
+  filter: drop-shadow(0 3px 10px rgba(71, 184, 255, 0.35));
 }
 
 .unit-toggle {
@@ -315,8 +321,11 @@ button {
 .hero-icon {
   width: clamp(58px, 12vw, 82px);
   height: clamp(58px, 12vw, 82px);
-  color: var(--fg);
-  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.12));
+  padding: 10px;
+  border-radius: 24px;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.08));
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.14));
 }
 
 .temp {
@@ -401,7 +410,8 @@ button {
 .hour svg {
   width: 28px;
   height: 28px;
-  color: var(--fg);
+  overflow: visible;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.12));
 }
 
 .hour .h-temp {
@@ -442,7 +452,8 @@ button {
 .day-row svg {
   width: 24px;
   height: 24px;
-  color: var(--fg);
+  overflow: visible;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.1));
 }
 
 .day-row .d-precip {
@@ -557,9 +568,26 @@ button {
 .empty-icon {
   width: 82px;
   height: 82px;
-  color: var(--fg);
-  opacity: 0.78;
+  opacity: 0.92;
   filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.12));
+}
+
+.hero-icon[data-icon="sun"],
+.hero-icon[data-icon="partly-day"] {
+  background: radial-gradient(circle at 35% 30%, rgba(255, 232, 150, 0.52), rgba(255, 255, 255, 0.08) 70%);
+}
+
+.hero-icon[data-icon="moon"],
+.hero-icon[data-icon="partly-night"] {
+  background: radial-gradient(circle at 35% 30%, rgba(164, 182, 255, 0.4), rgba(255, 255, 255, 0.06) 72%);
+}
+
+.hero-icon[data-icon="rain"],
+.hero-icon[data-icon="snow"],
+.hero-icon[data-icon="cloud"],
+.hero-icon[data-icon="fog"],
+.hero-icon[data-icon="thunder"] {
+  background: radial-gradient(circle at 35% 30%, rgba(179, 222, 255, 0.34), rgba(255, 255, 255, 0.06) 72%);
 }
 
 .empty p {

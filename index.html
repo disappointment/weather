@@ -4,21 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Weather</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <!-- Inline SVG icon definitions; referenced via <use href="#icon-..."> -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
-      <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/><line x1="4" y1="4" x2="6" y2="6"/><line x1="18" y1="18" x2="20" y2="20"/><line x1="4" y1="20" x2="6" y2="18"/><line x1="18" y1="6" x2="20" y2="4"/></g></symbol>
-      <symbol id="icon-moon" viewBox="0 0 24 24"><path fill="currentColor" d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></symbol>
-      <symbol id="icon-cloud" viewBox="0 0 24 24"><path fill="currentColor" d="M7 18a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 18z"/></symbol>
-      <symbol id="icon-partly-day" viewBox="0 0 24 24"><circle cx="8" cy="8" r="3.2" fill="currentColor"/><path fill="currentColor" d="M10 19a3.5 3.5 0 010-7 4.4 4.4 0 018.4-1.1A3.9 3.9 0 0118 19z"/></symbol>
-      <symbol id="icon-partly-night" viewBox="0 0 24 24"><path fill="currentColor" d="M14 4a5 5 0 00-3.5 8.2A4.4 4.4 0 0118 11a3.9 3.9 0 010 .2A5 5 0 0014 4z" opacity=".9"/><path fill="currentColor" d="M9 19a3.5 3.5 0 010-7 4.4 4.4 0 018.4-1.1A3.9 3.9 0 0117 19z"/></symbol>
-      <symbol id="icon-rain" viewBox="0 0 24 24"><path fill="currentColor" d="M7 15a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 15z"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="18" x2="7" y2="21"/><line x1="12" y1="18" x2="11" y2="21"/><line x1="16" y1="18" x2="15" y2="21"/></g></symbol>
-      <symbol id="icon-snow" viewBox="0 0 24 24"><path fill="currentColor" d="M7 15a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 15z"/><g fill="currentColor"><circle cx="8" cy="19" r="1"/><circle cx="12" cy="20" r="1"/><circle cx="16" cy="19" r="1"/></g></symbol>
-      <symbol id="icon-fog" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="9" x2="21" y2="9"/><line x1="5" y1="13" x2="19" y2="13"/><line x1="4" y1="17" x2="20" y2="17"/></g></symbol>
-      <symbol id="icon-thunder" viewBox="0 0 24 24"><path fill="currentColor" d="M7 14a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 14z"/><path fill="currentColor" d="M11 13l-3 5h3l-1 4 4-6h-3z"/></symbol>
+      <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="#ffb11f"/><circle cx="12" cy="12" r="3.1" fill="#ffd85c"/><g stroke="#ff8f18" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1.6" x2="12" y2="4.2"/><line x1="12" y1="19.8" x2="12" y2="22.4"/><line x1="1.6" y1="12" x2="4.2" y2="12"/><line x1="19.8" y1="12" x2="22.4" y2="12"/><line x1="4.5" y1="4.5" x2="6.4" y2="6.4"/><line x1="17.6" y1="17.6" x2="19.5" y2="19.5"/><line x1="4.5" y1="19.5" x2="6.4" y2="17.6"/><line x1="17.6" y1="6.4" x2="19.5" y2="4.5"/></g></symbol>
+      <symbol id="icon-moon" viewBox="0 0 24 24"><path fill="#cfd7ff" d="M20.8 13.2A8.8 8.8 0 1110.8 3.2 7.2 7.2 0 0020.8 13.2z"/><path fill="#9fb0ff" d="M15.6 5.5a6.4 6.4 0 00-2.6 5.1 6.7 6.7 0 003.1 5.7 8.2 8.2 0 01-8.5-1 8.8 8.8 0 007.1-9.8 7.5 7.5 0 01.9 0z" opacity=".65"/></symbol>
+      <symbol id="icon-cloud" viewBox="0 0 24 24"><path fill="#d8e4f2" d="M7 18a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 18z"/><path fill="#aebfd3" d="M10.6 18a3.6 3.6 0 01-.1-7.2 4.8 4.8 0 017.4-.6A4.3 4.3 0 0118.6 18z"/></symbol>
+      <symbol id="icon-partly-day" viewBox="0 0 24 24"><circle cx="8" cy="8" r="4.2" fill="#ffbf2f"/><g stroke="#ff941f" stroke-width="1.6" stroke-linecap="round"><line x1="8" y1="1.5" x2="8" y2="3.2"/><line x1="8" y1="12.8" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="3.2" y2="8"/><line x1="12.8" y1="8" x2="14.5" y2="8"/><line x1="3.3" y1="3.3" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="12.7" y2="12.7"/></g><path fill="#edf4fb" d="M10 19a3.5 3.5 0 010-7 4.4 4.4 0 018.4-1.1A3.9 3.9 0 0118 19z"/><path fill="#bfd1e1" d="M13 19a3 3 0 01.4-6 4.1 4.1 0 017.1-.4A3.7 3.7 0 0119.7 19z" opacity=".9"/></symbol>
+      <symbol id="icon-partly-night" viewBox="0 0 24 24"><path fill="#d9ddff" d="M13.8 3.6a4.8 4.8 0 00-3.3 8 4.4 4.4 0 017.4-1.2A4.8 4.8 0 0013.8 3.6z"/><path fill="#a9b8ff" d="M9.4 19a3.5 3.5 0 010-7 4.4 4.4 0 018.4-1.1A3.9 3.9 0 0117 19z"/><path fill="#e8eef8" d="M11.4 19a3.1 3.1 0 01-.1-6.2 4 4 0 017.3-.5A3.5 3.5 0 0118.6 19z"/></symbol>
+      <symbol id="icon-rain" viewBox="0 0 24 24"><path fill="#d4e1ee" d="M7 15a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 15z"/><path fill="#aebfd1" d="M10 15a3.5 3.5 0 01.2-7 4.3 4.3 0 017.6-.8A3.9 3.9 0 0118.3 15z"/><g stroke="#47b8ff" stroke-width="2" stroke-linecap="round"><line x1="8" y1="18" x2="7.1" y2="21"/><line x1="12" y1="18.3" x2="11.1" y2="21.3"/><line x1="16" y1="18" x2="15.1" y2="21"/></g></symbol>
+      <symbol id="icon-snow" viewBox="0 0 24 24"><path fill="#e5edf7" d="M7 15a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 15z"/><path fill="#c2d1e1" d="M10.4 15a3.4 3.4 0 010-6.8 4.2 4.2 0 017.4-.8A3.7 3.7 0 0118 15z"/><g fill="#8ed8ff"><circle cx="8" cy="19" r="1.2"/><circle cx="12" cy="20" r="1.2"/><circle cx="16" cy="19" r="1.2"/></g></symbol>
+      <symbol id="icon-fog" viewBox="0 0 24 24"><g stroke="#c4d0da" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="9" x2="21" y2="9"/><line x1="5" y1="13" x2="19" y2="13"/><line x1="4" y1="17" x2="20" y2="17"/></g><g stroke="#8aa7bb" stroke-width="1.3" stroke-linecap="round" opacity=".8"><line x1="7" y1="6.5" x2="17" y2="6.5"/><line x1="8" y1="20" x2="16" y2="20"/></g></symbol>
+      <symbol id="icon-thunder" viewBox="0 0 24 24"><path fill="#cfd8e7" d="M7 14a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 14z"/><path fill="#9db0c6" d="M10.4 14a3.5 3.5 0 01.1-7 4.4 4.4 0 017.4-.8A3.9 3.9 0 0118.2 14z"/><path fill="#ffd33d" d="M11.2 13l-2.8 4.8h2.9l-1 4.2 4.3-6.3h-2.9l1.3-2.7z"/></symbol>
     </defs>
   </svg>
 
@@ -30,7 +31,11 @@
         <ul id="search-results" class="results" hidden></ul>
       </div>
       <button id="geo-btn" class="icon-btn" title="Use my location" aria-label="Use my location">
-        <span aria-hidden="true">◎</span>
+        <svg class="geo-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#47b8ff" d="M12 2a7 7 0 017 7c0 4.3-4.9 10.3-6.4 12a.8.8 0 01-1.2 0C9.9 19.3 5 13.3 5 9a7 7 0 017-7z"/>
+          <circle cx="12" cy="9" r="2.9" fill="#f7fbff"/>
+          <circle cx="12" cy="9" r="1.3" fill="#ffbf2f"/>
+        </svg>
       </button>
       <button id="unit-btn" class="unit-toggle" aria-label="Toggle units">°F</button>
     </header>
