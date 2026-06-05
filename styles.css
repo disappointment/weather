@@ -515,6 +515,18 @@ button {
   padding: 14px;
 }
 
+.tile-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tile-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
 .tile-label {
   color: var(--muted);
   font-size: 11px;
