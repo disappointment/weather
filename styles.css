@@ -719,18 +719,10 @@ button {
 
 @media (min-width: 700px) {
   .app {
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.9fr);
-    align-items: start;
+    /* Single full-width column on desktop so the hourly strip, 7-day cards,
+       and tiles all use the full content width. */
     gap: 18px;
     padding-top: 28px;
-  }
-
-  .controls,
-  .status,
-  .hero,
-  .hourly,
-  .empty {
-    grid-column: 1 / -1;
   }
 
   .hero {
@@ -738,8 +730,9 @@ button {
     padding-top: 34px;
   }
 
+  /* Stat tiles flow to fill the full width instead of a fixed 2 columns. */
   .tiles {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
 
   /* 7-day forecast as a horizontal row of cards (Google-style) on wide
