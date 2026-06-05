@@ -752,9 +752,9 @@ button {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
     min-height: 0;
-    padding: 12px 4px;
+    padding: 16px 6px;
     border-top: 0;
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.12);
@@ -762,27 +762,39 @@ button {
   }
 
   .day-row:first-child {
-    padding-top: 12px;
+    padding-top: 16px;
   }
 
   .day-row .d-name {
     white-space: nowrap;
+    font-size: 16px;
   }
 
   .day-row svg {
-    width: 28px;
-    height: 28px;
+    width: 42px;
+    height: 42px;
   }
 
   .day-row .d-precip {
     text-align: center;
+    font-size: 13px;
   }
 
   .day-range {
     display: flex;
     flex-direction: column-reverse; /* high temp on top, low below */
     align-items: center;
-    gap: 1px;
+    gap: 2px;
+  }
+
+  /* High temp prominent, low temp muted (Google-style) */
+  .day-range .range-hi {
+    font-size: 19px;
+    color: var(--fg);
+  }
+
+  .day-range .range-lo {
+    font-size: 16px;
   }
 
   .day-range .range {
