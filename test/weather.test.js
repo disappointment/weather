@@ -110,3 +110,45 @@ test('sliceNext24 falls back to index 0 when time not found', () => {
   const out = sliceNext24(hourly, '1999-01-01T00:00');
   assert.equal(out[0].time, '2026-06-04T00:00');
 });
+
+import {
+  forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
+} from '../weather.js';
+
+test('forecastUrl includes coords, unit, and blocks', () => {
+  const u = forecastUrl(47.6, -122.3, 'fahrenheit');
+  assert.match(u, /latitude=47\.6/);
+  assert.match(u, /longitude=-122\.3/);
+  assert.match(u, /temperature_unit=fahrenheit/);
+  assert.match(u, /wind_speed_unit=mph/);
+  assert.match(u, /timezone=auto/);
+  assert.match(u, /current=/);
+  assert.match(u, /hourly=/);
+  assert.match(u, /daily=/);
+  assert.match(u, /uv_index/);
+});
+
+test('geocodeUrl encodes the query', () => {
+  assert.match(geocodeUrl('San Juan'), /name=San(\+|%20)Juan/);
+  assert.match(geocodeUrl('x'), /count=5/);
+});
+
+test('reverseGeocodeUrl includes lat/lon', () => {
+  const u = reverseGeocodeUrl(47.6, -122.3);
+  assert.match(u, /latitude=47\.6/);
+  assert.match(u, /longitude=-122\.3/);
+});
+
+test('parsePlaces maps results and handles empties', () => {
+  const json = { results: [
+    { name: 'Seattle', admin1: 'Washington', country: 'United States',
+      latitude: 47.6, longitude: -122.3 },
+    { name: 'Paris', country: 'France', latitude: 48.8, longitude: 2.3 },
+  ]};
+  const out = parsePlaces(json);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].name, 'Seattle, Washington, United States');
+  assert.equal(out[0].lat, 47.6);
+  assert.equal(out[1].name, 'Paris, France');
+  assert.deepEqual(parsePlaces({}), []);
+});

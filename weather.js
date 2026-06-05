@@ -107,3 +107,57 @@ export function sliceNext24(hourly, currentIso) {
   }
   return out;
 }
+
+const CURRENT = [
+  'temperature_2m', 'relative_humidity_2m', 'apparent_temperature',
+  'is_day', 'precipitation', 'weather_code', 'wind_speed_10m',
+  'wind_direction_10m', 'surface_pressure',
+].join(',');
+
+const HOURLY = [
+  'temperature_2m', 'weather_code', 'precipitation_probability',
+  'is_day', 'uv_index', 'visibility',
+].join(',');
+
+const DAILY = [
+  'weather_code', 'temperature_2m_max', 'temperature_2m_min',
+  'precipitation_probability_max', 'sunrise', 'sunset', 'uv_index_max',
+].join(',');
+
+export function forecastUrl(lat, lon, unit) {
+  const p = new URLSearchParams({
+    latitude: lat,
+    longitude: lon,
+    current: CURRENT,
+    hourly: HOURLY,
+    daily: DAILY,
+    temperature_unit: unit,
+    wind_speed_unit: 'mph',
+    precipitation_unit: 'inch',
+    timezone: 'auto',
+  });
+  return `https://api.open-meteo.com/v1/forecast?${p.toString()}`;
+}
+
+export function geocodeUrl(query) {
+  const p = new URLSearchParams({
+    name: query, count: 5, language: 'en', format: 'json',
+  });
+  return `https://geocoding-api.open-meteo.com/v1/search?${p.toString()}`;
+}
+
+export function reverseGeocodeUrl(lat, lon) {
+  const p = new URLSearchParams({
+    latitude: lat, longitude: lon, localityLanguage: 'en',
+  });
+  return `https://api.bigdatacloud.net/data/reverse-geocode-client?${p.toString()}`;
+}
+
+export function parsePlaces(json) {
+  const results = (json && json.results) || [];
+  return results.map((r) => ({
+    name: [r.name, r.admin1, r.country].filter(Boolean).join(', '),
+    lat: r.latitude,
+    lon: r.longitude,
+  }));
+}
