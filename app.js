@@ -1,5 +1,5 @@
 import {
-  describeWeather, sliceNext24, degToCompass, unitConfig,
+  describeWeather, sliceNext24, degToCompass, unitConfig, tempGraph,
   rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
 } from './weather.js';
@@ -77,7 +77,38 @@ function renderHero(cur, daily, name) {
   show('hero');
 }
 
+// Cell geometry must match the CSS: .hour is HOUR_CELL wide with HOUR_GAP between.
+const HOUR_CELL = 58;
+const HOUR_GAP = 10;
+const GRAPH_H = 40;
+const GRAPH_PAD = 6;
+
+function tempGraphSvg(hours) {
+  const temps = hours.map((h) => h.temp);
+  const geom = {
+    pitch: HOUR_CELL + HOUR_GAP,
+    offsetX: HOUR_CELL / 2,
+    height: GRAPH_H,
+    padY: GRAPH_PAD,
+  };
+  const g = tempGraph(temps, geom);
+  if (!g.points.length) return ''; // not enough data to draw a curve
+  const width = HOUR_CELL + (HOUR_CELL + HOUR_GAP) * (hours.length - 1);
+  const dots = g.points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="1.7"/>`).join('');
+  return `
+    <svg class="hourly-graph" width="${width}" height="${GRAPH_H}"
+         viewBox="0 0 ${width} ${GRAPH_H}" aria-hidden="true">
+      <path class="graph-area" d="${g.area}"/>
+      <path class="graph-line" d="${g.line}"/>
+      <g class="graph-dots">${dots}</g>
+    </svg>`;
+}
+
 function renderHourly(hours) {
+  const strip = $('hourly-strip');
+  // Temperature curve as a ribbon across the top of the strip; it scrolls with
+  // the cells because it shares the scroll container and matches their pitch.
+  strip.innerHTML = tempGraphSvg(hours);
   const frag = document.createDocumentFragment();
   hours.forEach((h, i) => {
     const d = describeWeather(h.code, h.isDay);
@@ -86,11 +117,11 @@ function renderHourly(hours) {
     cell.innerHTML = `
       <div class="h-time">${i === 0 ? 'Now' : formatHourLabel(h.time)}</div>
       <svg data-icon="${d.icon}" viewBox="0 0 24 24" aria-hidden="true"><use href="${iconHref(d.icon)}"></use></svg>
-      <div class="h-temp">${Math.round(h.temp)}°</div>
+      <div class="h-temp">${Number.isFinite(h.temp) ? Math.round(h.temp) + '°' : '—'}</div>
       <div class="h-precip">${h.precip > 0 ? h.precip + '%' : ''}</div>`;
     frag.appendChild(cell);
   });
-  $('hourly-strip').replaceChildren(frag);
+  strip.appendChild(frag);
   show('hourly-card');
 }
 

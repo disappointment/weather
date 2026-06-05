@@ -421,13 +421,42 @@ button {
 
 /* Hourly */
 .hourly-strip {
+  position: relative;
   display: flex;
   gap: 10px;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scroll-snap-type: x proximity;
-  padding: 1px 0 8px;
+  padding: 54px 0 8px; /* top room for the temperature ribbon */
   scrollbar-width: thin;
+}
+
+/* Temperature curve drawn across the top of the strip (scrolls with cells) */
+.hourly-graph {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  height: 40px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.graph-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.18));
+}
+
+.graph-area {
+  fill: color-mix(in srgb, var(--accent), transparent 86%);
+  stroke: none;
+}
+
+.graph-dots circle {
+  fill: var(--accent);
 }
 
 .hour {
@@ -711,6 +740,60 @@ button {
 
   .tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 7-day forecast as a horizontal row of cards (Google-style) on wide
+     screens; the vertical list with range bars stays on mobile. */
+  .daily-list {
+    display: grid;
+    grid-auto-flow: column;
+    /* Fill the row evenly when there's space, but never shrink a card below
+       46px — if 7 won't fit, the row scrolls instead of clipping content. */
+    grid-auto-columns: minmax(46px, 1fr);
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .day-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-height: 0;
+    padding: 12px 4px;
+    border-top: 0;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.12);
+    text-align: center;
+  }
+
+  .day-row:first-child {
+    padding-top: 12px;
+  }
+
+  .day-row .d-name {
+    white-space: nowrap;
+  }
+
+  .day-row svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .day-row .d-precip {
+    text-align: center;
+  }
+
+  .day-range {
+    display: flex;
+    flex-direction: column-reverse; /* high temp on top, low below */
+    align-items: center;
+    gap: 1px;
+  }
+
+  .day-range .range {
+    display: none; /* the horizontal range bar doesn't fit the card layout */
   }
 }
 

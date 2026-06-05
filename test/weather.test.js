@@ -89,7 +89,45 @@ test('rangeBar computes left/width percentages', () => {
   assert.equal(flat.width, 100);
 });
 
-import { sliceNext24 } from '../weather.js';
+import { sliceNext24, tempGraph } from '../weather.js';
+
+test('tempGraph maps temps to evenly spaced points', () => {
+  const geom = { pitch: 68, offsetX: 29, height: 40, padY: 6 };
+  const g = tempGraph([60, 80, 70], geom);
+  assert.equal(g.points.length, 3);
+  assert.deepEqual(g.points.map((p) => p.x), [29, 97, 165]);
+  // min temp -> bottom of band (padY + usable = 6 + 28 = 34)
+  assert.equal(g.points[0].y, 34);
+  // max temp -> top of band (padY = 6)
+  assert.equal(g.points[1].y, 6);
+  assert.equal(g.min, 60);
+  assert.equal(g.max, 80);
+  assert.ok(g.line.startsWith('M 29 34'));
+  assert.ok(g.area.endsWith('Z'));
+});
+
+test('tempGraph handles a flat day without NaN', () => {
+  const g = tempGraph([70, 70, 70], { pitch: 68, offsetX: 29, height: 40, padY: 6 });
+  assert.ok(g.points.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)));
+});
+
+test('tempGraph returns empty paths for no data', () => {
+  const g = tempGraph([], { pitch: 68, offsetX: 29, height: 40, padY: 6 });
+  assert.deepEqual(g.points, []);
+  assert.equal(g.line, '');
+  assert.equal(g.area, '');
+});
+
+test('tempGraph skips non-finite temps and keeps x at the original index', () => {
+  const geom = { pitch: 68, offsetX: 29, height: 40, padY: 6 };
+  // index 1 is missing -> dropped, but indices 0 and 2 keep their x positions
+  const g = tempGraph([60, null, 80], geom);
+  assert.equal(g.points.length, 2);
+  assert.deepEqual(g.points.map((p) => p.x), [29, 165]);
+  assert.ok(g.points.every((p) => Number.isFinite(p.y)));
+  // fewer than 2 valid points -> no curve
+  assert.deepEqual(tempGraph([NaN, undefined, 70], geom).points, []);
+});
 
 function fakeHourly(startHour, n) {
   const time = [], temperature_2m = [], weather_code = [],

@@ -106,6 +106,53 @@ export function rangeBar(min, max, weekMin, weekMax) {
   return { left: Math.round(left), width: Math.round(width) };
 }
 
+// Build SVG path data for a temperature sparkline over evenly spaced points.
+// geom: { pitch, offsetX, height, padY }. Returns smooth line + filled area
+// paths plus the raw points, so the caller just drops them into an <svg>.
+export function tempGraph(temps, geom) {
+  const { pitch, offsetX, height, padY } = geom;
+  // Skip missing/non-numeric temps (API gaps) but keep x tied to the original
+  // hour index so the curve stays aligned with the cells. Need >=2 to draw.
+  const valid = temps
+    .map((t, i) => ({ t, i }))
+    .filter((e) => Number.isFinite(e.t));
+  if (valid.length < 2) return { line: '', area: '', points: [], min: 0, max: 0 };
+  const ts = valid.map((e) => e.t);
+  const min = Math.min(...ts);
+  const max = Math.max(...ts);
+  const span = max - min || 1; // avoid divide-by-zero on a flat day
+  const usable = height - 2 * padY;
+  const r = (v) => Math.round(v * 100) / 100;
+  const points = valid.map(({ t, i }) => ({
+    x: r(offsetX + pitch * i),
+    y: r(padY + (1 - (t - min) / span) * usable),
+  }));
+  const line = smoothPath(points);
+  const last = points[points.length - 1];
+  const area = `${line} L ${last.x} ${height} L ${points[0].x} ${height} Z`;
+  return { line, area, points, min, max };
+}
+
+// Catmull-Rom -> cubic Bezier for a smooth curve through every point.
+function smoothPath(pts) {
+  if (!pts.length) return '';
+  if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
+  const r = (v) => Math.round(v * 100) / 100;
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${r(c1x)} ${r(c1y)}, ${r(c2x)} ${r(c2y)}, ${r(p2.x)} ${r(p2.y)}`;
+  }
+  return d;
+}
+
 export function sliceNext24(hourly, currentIso) {
   const target = floorToHour(currentIso);
   let start = hourly.time.indexOf(target);
