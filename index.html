@@ -25,11 +25,13 @@
   <main class="app">
     <header class="controls">
       <div class="search">
-        <input id="search-input" type="text" placeholder="Search city…"
+        <input id="search-input" type="text" placeholder="Search city..."
                autocomplete="off" aria-label="Search city">
         <ul id="search-results" class="results" hidden></ul>
       </div>
-      <button id="geo-btn" class="icon-btn" title="Use my location" aria-label="Use my location">📍</button>
+      <button id="geo-btn" class="icon-btn" title="Use my location" aria-label="Use my location">
+        <span aria-hidden="true">◎</span>
+      </button>
       <button id="unit-btn" class="unit-toggle" aria-label="Toggle units">°F</button>
     </header>
 
@@ -69,7 +71,8 @@
     </section>
 
     <section id="empty" class="empty">
-      <p>Search for a city or tap 📍 to use your location.</p>
+      <svg class="empty-icon"><use href="#icon-partly-day"></use></svg>
+      <p>Search for a city or use your current location.</p>
     </section>
   </main>
 
