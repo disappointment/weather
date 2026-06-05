@@ -172,6 +172,25 @@ export function reverseGeocodeUrl(lat, lon) {
   return `https://api.bigdatacloud.net/data/reverse-geocode-client?${p.toString()}`;
 }
 
+// A location lives in the URL as ?q=<name>&lat=<n>&lon=<n> so it can be
+// bookmarked/shared. Coords are authoritative on load; q is just readable.
+export function parseLocationParams(search) {
+  const p = new URLSearchParams(search);
+  const lat = parseFloat(p.get('lat'));
+  const lon = parseFloat(p.get('lon'));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { name: p.get('q') || 'Pinned location', lat, lon };
+}
+
+export function locationQuery(loc) {
+  const round = (n) => Math.round(n * 1e4) / 1e4; // ~11m precision, tidy URLs
+  const p = new URLSearchParams();
+  p.set('q', loc.name);
+  p.set('lat', round(loc.lat));
+  p.set('lon', round(loc.lon));
+  return p.toString();
+}
+
 export function parsePlaces(json) {
   const results = (json && json.results) || [];
   return results.map((r) => ({

@@ -1,6 +1,7 @@
 import {
   describeWeather, sliceNext24, degToCompass, unitConfig,
   rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
+  parseLocationParams, locationQuery,
 } from './weather.js';
 
 const $ = (id) => document.getElementById(id);
@@ -152,19 +153,25 @@ function renderAll(data, name, updatedAt) {
 
 // ---- Data flow ----
 
-function persist(data, name) {
+function sameLoc(a, b) {
+  return a && b && Math.abs(a.lat - b.lat) < 1e-4 && Math.abs(a.lon - b.lon) < 1e-4;
+}
+
+function persist(data) {
   try {
-    localStorage.setItem(LS_DATA, JSON.stringify({ data, name, savedAt: Date.now() }));
+    localStorage.setItem(LS_DATA,
+      JSON.stringify({ data, loc: location_, savedAt: Date.now() }));
   } catch { /* storage full or unavailable — best effort */ }
 }
 
-// Paint the last good forecast immediately so reloads/offline opens aren't blank.
+// Paint the last good forecast immediately so reloads/offline opens aren't blank,
+// but only when the cache is for the location we're actually showing.
 function hydrateFromCache() {
   if (!location_) return;
   const cached = loadJSON(LS_DATA);
-  if (cached && cached.data) {
+  if (cached && cached.data && sameLoc(cached.loc, location_)) {
     lastData = cached.data;
-    renderAll(cached.data, cached.name || location_.name,
+    renderAll(cached.data, location_.name,
       cached.savedAt ? new Date(cached.savedAt) : null);
   }
 }
@@ -180,7 +187,7 @@ async function refresh() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     lastData = data;
-    persist(data, location_.name);
+    persist(data);
     renderAll(data, location_.name, new Date());
   } catch (err) {
     if (err.name === 'AbortError') return; // superseded by a newer request
@@ -190,9 +197,17 @@ async function refresh() {
   }
 }
 
+// Reflect the active location in the URL so it can be bookmarked/shared.
+// replaceState (not push) keeps the back button from filling with cities.
+function syncUrl(loc) {
+  window.history.replaceState(null, '',
+    `${window.location.pathname}?${locationQuery(loc)}`);
+}
+
 function setLocation(loc) {
   location_ = loc;
   localStorage.setItem(LS_LOC, JSON.stringify(loc));
+  syncUrl(loc);
   refresh();
 }
 
@@ -343,6 +358,13 @@ document.addEventListener('click', (e) => {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refresh();
 });
+
+// A location in the URL (a bookmark/shared link) wins over the saved one.
+location_ = parseLocationParams(window.location.search) || location_;
+if (location_) {
+  localStorage.setItem(LS_LOC, JSON.stringify(location_));
+  syncUrl(location_); // normalize bare/saved visits into a shareable URL
+}
 
 setUnitLabel();
 hydrateFromCache();

@@ -135,6 +135,7 @@ test('sliceNext24 falls back to index 0 when time not found', () => {
 
 import {
   forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
+  parseLocationParams, locationQuery,
 } from '../weather.js';
 
 test('forecastUrl includes coords, unit, and blocks', () => {
@@ -173,4 +174,25 @@ test('parsePlaces maps results and handles empties', () => {
   assert.equal(out[0].lat, 47.6);
   assert.equal(out[1].name, 'Paris, France');
   assert.deepEqual(parsePlaces({}), []);
+});
+
+test('parseLocationParams reads q/lat/lon and rejects incomplete', () => {
+  const loc = parseLocationParams('?q=Seattle,+Washington&lat=47.6&lon=-122.3');
+  assert.deepEqual(loc, { name: 'Seattle, Washington', lat: 47.6, lon: -122.3 });
+  // missing coords -> null (can't pin a location without them)
+  assert.equal(parseLocationParams('?q=Seattle'), null);
+  assert.equal(parseLocationParams(''), null);
+  // coords present but no name -> fallback label
+  assert.equal(parseLocationParams('?lat=10&lon=20').name, 'Pinned location');
+});
+
+test('locationQuery round-trips through parseLocationParams', () => {
+  const loc = { name: 'São Paulo, Brazil', lat: -23.5505, lon: -46.6333 };
+  const back = parseLocationParams('?' + locationQuery(loc));
+  assert.equal(back.name, 'São Paulo, Brazil');
+  assert.equal(back.lat, -23.5505);
+  assert.equal(back.lon, -46.6333);
+  // coords are rounded to 4 decimals for tidy URLs
+  assert.match(locationQuery({ name: 'X', lat: 47.61234, lon: -122.33 }),
+    /lat=47\.6123&lon=-122\.33/);
 });
