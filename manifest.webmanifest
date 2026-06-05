@@ -1,0 +1,19 @@
+{
+  "name": "Weather",
+  "short_name": "Weather",
+  "description": "Personal weather forecast (Open-Meteo, client-side).",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#5f9fd1",
+  "theme_color": "#5f9fd1",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

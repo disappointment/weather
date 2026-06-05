@@ -4,7 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Weather</title>
+  <meta name="theme-color" content="#5f9fd1">
+  <meta name="description" content="Personal weather forecast (Open-Meteo, client-side).">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="favicon.svg">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -28,6 +32,7 @@
       <symbol id="icon-sunset" viewBox="0 0 24 24"><g stroke="#ff8a3d" stroke-width="1.7" stroke-linecap="round"><line x1="12" y1="3" x2="12" y2="5.4"/><line x1="4.8" y1="6.4" x2="6.3" y2="7.9"/><line x1="19.2" y1="6.4" x2="17.7" y2="7.9"/></g><path fill="#ff9b3d" d="M7.6 14a4.4 4.4 0 018.8 0z"/><line x1="3" y1="14" x2="21" y2="14" stroke="#8fb2cc" stroke-width="2" stroke-linecap="round"/><path d="M9.4 17.4l2.6 2.6 2.6-2.6" fill="none" stroke="#ff8a3d" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="icon-pressure" viewBox="0 0 24 24"><path fill="none" stroke="#8fb2cc" stroke-width="2" stroke-linecap="round" d="M4.5 17a8 8 0 1115 0"/><line x1="12" y1="14" x2="15.6" y2="9.6" stroke="#ff5d5d" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="14" r="1.6" fill="#cfd8e7"/></symbol>
       <symbol id="icon-visibility" viewBox="0 0 24 24"><path fill="none" stroke="#8fb2cc" stroke-width="2" stroke-linejoin="round" d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3" fill="#47b8ff"/><circle cx="12" cy="12" r="1.2" fill="#0b1b2b"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 10-1.5 6.4"/><path fill="currentColor" d="M20 6.5V11h-4.5z"/></symbol>
     </defs>
   </svg>
 
@@ -35,8 +40,11 @@
     <header class="controls">
       <div class="search">
         <input id="search-input" type="text" placeholder="Search city..."
-               autocomplete="off" aria-label="Search city">
-        <ul id="search-results" class="results" hidden></ul>
+               autocomplete="off" aria-label="Search city"
+               role="combobox" aria-expanded="false" aria-controls="search-results"
+               aria-autocomplete="list" aria-activedescendant="">
+        <ul id="search-results" class="results" role="listbox"
+            aria-label="City results" hidden></ul>
       </div>
       <button id="geo-btn" class="icon-btn" title="Use my location" aria-label="Use my location">
         <svg class="geo-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -48,7 +56,8 @@
       <button id="unit-btn" class="unit-toggle" aria-label="Toggle units">°F</button>
     </header>
 
-    <section id="status" class="status" hidden></section>
+    <section id="status" class="status" role="status" aria-live="polite"
+             aria-atomic="true" hidden></section>
 
     <section id="hero" class="hero" hidden>
       <div class="place" id="place-name"></div>
@@ -61,6 +70,11 @@
         <span id="hero-feels"></span> &middot;
         <span id="hero-hi"></span> / <span id="hero-lo"></span>
       </div>
+      <button id="refresh-btn" class="refresh" type="button"
+              aria-label="Refresh weather" hidden>
+        <svg class="refresh-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-refresh"></use></svg>
+        <span id="updated-time"></span>
+      </button>
     </section>
 
     <section id="hourly-card" class="card hourly" hidden>

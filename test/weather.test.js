@@ -35,7 +35,7 @@ test('describeWeather: unknown code falls back', () => {
 });
 
 import {
-  floorToHour, degToCompass, metersToMiles, rangeBar,
+  floorToHour, degToCompass, metersToMiles, metersToKm, rangeBar, unitConfig,
 } from '../weather.js';
 
 test('floorToHour truncates to the hour', () => {
@@ -55,6 +55,28 @@ test('metersToMiles rounds to 1 decimal', () => {
   assert.equal(metersToMiles(1609), 1);
   assert.equal(metersToMiles(16090), 10);
   assert.equal(metersToMiles(8045), 5);
+});
+
+test('metersToKm rounds to 1 decimal', () => {
+  assert.equal(metersToKm(1000), 1);
+  assert.equal(metersToKm(16090), 16.1);
+  assert.equal(metersToKm(500), 0.5);
+});
+
+test('unitConfig: imperial for fahrenheit, metric for celsius', () => {
+  const f = unitConfig('fahrenheit');
+  assert.equal(f.windSpeedUnit, 'mph');
+  assert.equal(f.precipitationUnit, 'inch');
+  assert.equal(f.windLabel, 'mph');
+  assert.equal(f.distanceLabel, 'mi');
+  assert.equal(f.distanceFrom(1609), 1);
+
+  const c = unitConfig('celsius');
+  assert.equal(c.windSpeedUnit, 'kmh');
+  assert.equal(c.precipitationUnit, 'mm');
+  assert.equal(c.windLabel, 'km/h');
+  assert.equal(c.distanceLabel, 'km');
+  assert.equal(c.distanceFrom(1000), 1);
 });
 
 test('rangeBar computes left/width percentages', () => {

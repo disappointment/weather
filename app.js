@@ -1,16 +1,23 @@
 import {
-  describeWeather, sliceNext24, degToCompass, metersToMiles,
+  describeWeather, sliceNext24, degToCompass, unitConfig,
   rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
 } from './weather.js';
 
 const $ = (id) => document.getElementById(id);
 const LS_LOC = 'weather.location';
 const LS_UNIT = 'weather.unit';
+const LS_DATA = 'weather.lastData';
 
 let unit = localStorage.getItem(LS_UNIT) || 'fahrenheit';
 let location_ = loadJSON(LS_LOC); // { name, lat, lon } | null
 let lastData = null;
 let refreshTimer = null;
+let forecastController = null; // aborts in-flight forecast fetches
+let searchController = null;    // aborts in-flight search fetches
+
+// Search/combobox state
+let currentPlaces = [];
+let activeIndex = -1;
 
 function loadJSON(key) {
   try { return JSON.parse(localStorage.getItem(key)); }
@@ -23,6 +30,8 @@ function setUnitLabel() {
 
 function showStatus(msg, isError = false) {
   const el = $('status');
+  // Errors interrupt; routine status is announced politely.
+  el.setAttribute('aria-live', isError ? 'assertive' : 'polite');
   el.textContent = msg;
   el.classList.toggle('error', isError);
   el.hidden = !msg;
@@ -44,6 +53,10 @@ function formatHourLabel(iso) {
 function formatWeekday(iso) {
   return new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
 }
+function formatUpdated(date) {
+  return 'Updated ' + date.toLocaleTimeString('en-US',
+    { hour: 'numeric', minute: '2-digit' });
+}
 
 // ---- Rendering ----
 
@@ -64,8 +77,7 @@ function renderHero(cur, daily, name) {
 }
 
 function renderHourly(hours) {
-  const strip = $('hourly-strip');
-  strip.innerHTML = '';
+  const frag = document.createDocumentFragment();
   hours.forEach((h, i) => {
     const d = describeWeather(h.code, h.isDay);
     const cell = document.createElement('div');
@@ -75,16 +87,16 @@ function renderHourly(hours) {
       <svg data-icon="${d.icon}" viewBox="0 0 24 24" aria-hidden="true"><use href="${iconHref(d.icon)}"></use></svg>
       <div class="h-temp">${Math.round(h.temp)}°</div>
       <div class="h-precip">${h.precip > 0 ? h.precip + '%' : ''}</div>`;
-    strip.appendChild(cell);
+    frag.appendChild(cell);
   });
+  $('hourly-strip').replaceChildren(frag);
   show('hourly-card');
 }
 
 function renderDaily(daily) {
-  const list = $('daily-list');
-  list.innerHTML = '';
   const weekMin = Math.min(...daily.temperature_2m_min);
   const weekMax = Math.max(...daily.temperature_2m_max);
+  const frag = document.createDocumentFragment();
   daily.time.forEach((iso, i) => {
     const d = describeWeather(daily.weather_code[i], 1);
     const bar = rangeBar(daily.temperature_2m_min[i],
@@ -102,25 +114,32 @@ function renderDaily(daily) {
           style="left:${bar.left}%;width:${bar.width}%"></span></span>
         <span class="range-hi">${Math.round(daily.temperature_2m_max[i])}°</span>
       </span>`;
-    list.appendChild(row);
+    frag.appendChild(row);
   });
+  $('daily-list').replaceChildren(frag);
   show('daily-card');
 }
 
 function renderTiles(cur, daily, firstHour) {
+  const u = unitConfig(unit);
   $('t-wind').textContent =
-    `${Math.round(cur.wind_speed_10m)} mph ${degToCompass(cur.wind_direction_10m)}`;
+    `${Math.round(cur.wind_speed_10m)} ${u.windLabel} ${degToCompass(cur.wind_direction_10m)}`;
   $('t-humidity').textContent = `${cur.relative_humidity_2m}%`;
   $('t-uv').textContent = Math.round(firstHour ? firstHour.uv : daily.uv_index_max[0]);
   $('t-sunrise').textContent = formatClock(daily.sunrise[0]);
   $('t-sunset').textContent = formatClock(daily.sunset[0]);
   $('t-pressure').textContent = `${Math.round(cur.surface_pressure)} hPa`;
   $('t-visibility').textContent = firstHour
-    ? `${metersToMiles(firstHour.visibility)} mi` : '—';
+    ? `${u.distanceFrom(firstHour.visibility)} ${u.distanceLabel}` : '—';
   show('tiles-card');
 }
 
-function renderAll(data, name) {
+function setUpdated(date) {
+  $('updated-time').textContent = date ? formatUpdated(date) : '';
+  $('refresh-btn').hidden = false;
+}
+
+function renderAll(data, name, updatedAt) {
   const hours = sliceNext24(data.hourly, data.current.time);
   renderHero(data.current, data.daily, name);
   renderHourly(hours);
@@ -128,20 +147,43 @@ function renderAll(data, name) {
   renderTiles(data.current, data.daily, hours[0]);
   $('empty').hidden = true;
   showStatus('');
+  setUpdated(updatedAt);
 }
 
 // ---- Data flow ----
 
+function persist(data, name) {
+  try {
+    localStorage.setItem(LS_DATA, JSON.stringify({ data, name, savedAt: Date.now() }));
+  } catch { /* storage full or unavailable — best effort */ }
+}
+
+// Paint the last good forecast immediately so reloads/offline opens aren't blank.
+function hydrateFromCache() {
+  if (!location_) return;
+  const cached = loadJSON(LS_DATA);
+  if (cached && cached.data) {
+    lastData = cached.data;
+    renderAll(cached.data, cached.name || location_.name,
+      cached.savedAt ? new Date(cached.savedAt) : null);
+  }
+}
+
 async function refresh() {
   if (!location_) { $('empty').hidden = false; return; }
+  forecastController?.abort();
+  forecastController = new AbortController();
+  const { signal } = forecastController;
   try {
-    showStatus('Loading…');
-    const res = await fetch(forecastUrl(location_.lat, location_.lon, unit));
+    if (!lastData) showStatus('Loading…');
+    const res = await fetch(forecastUrl(location_.lat, location_.lon, unit), { signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     lastData = data;
-    renderAll(data, location_.name);
+    persist(data, location_.name);
+    renderAll(data, location_.name, new Date());
   } catch (err) {
+    if (err.name === 'AbortError') return; // superseded by a newer request
     showStatus(lastData
       ? 'Could not refresh — showing last data.'
       : `Could not load weather (${err.message}).`, true);
@@ -154,49 +196,109 @@ function setLocation(loc) {
   refresh();
 }
 
+// ---- Search (combobox) ----
+
+function mutedItem(text) {
+  const li = document.createElement('li');
+  li.className = 'muted';
+  li.textContent = text;
+  return li;
+}
+
+function openResults() {
+  $('search-results').hidden = false;
+  $('search-input').setAttribute('aria-expanded', 'true');
+}
+
+function closeResults() {
+  $('search-results').hidden = true;
+  $('search-input').setAttribute('aria-expanded', 'false');
+  $('search-input').setAttribute('aria-activedescendant', '');
+  activeIndex = -1;
+}
+
+function selectPlace(i) {
+  const p = currentPlaces[i];
+  if (!p) return;
+  $('search-input').value = '';
+  closeResults();
+  setLocation(p);
+}
+
+function moveActive(delta) {
+  if (!currentPlaces.length) return;
+  activeIndex = (activeIndex + delta + currentPlaces.length) % currentPlaces.length;
+  const items = $('search-results').querySelectorAll('[role="option"]');
+  items.forEach((el, i) => {
+    const on = i === activeIndex;
+    el.classList.toggle('active', on);
+    el.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  $('search-input').setAttribute('aria-activedescendant',
+    activeIndex >= 0 ? `result-${activeIndex}` : '');
+}
+
 async function doSearch(query) {
   const list = $('search-results');
-  if (!query.trim()) { list.hidden = true; return; }
+  if (!query.trim()) { closeResults(); return; }
+  searchController?.abort();
+  searchController = new AbortController();
   try {
-    const res = await fetch(geocodeUrl(query));
+    const res = await fetch(geocodeUrl(query), { signal: searchController.signal });
     if (!res.ok) throw new Error('search failed');
     const places = parsePlaces(await res.json());
-    list.innerHTML = '';
+    currentPlaces = places;
+    activeIndex = -1;
+    const frag = document.createDocumentFragment();
     if (!places.length) {
-      list.innerHTML = '<li class="muted">No place found</li>';
+      frag.appendChild(mutedItem('No place found'));
     } else {
-      places.forEach((p) => {
+      places.forEach((p, i) => {
         const li = document.createElement('li');
+        li.id = `result-${i}`;
+        li.setAttribute('role', 'option');
+        li.setAttribute('aria-selected', 'false');
         li.textContent = p.name;
-        li.addEventListener('click', () => {
-          $('search-input').value = '';
-          list.hidden = true;
-          setLocation(p);
-        });
-        list.appendChild(li);
+        li.addEventListener('click', () => selectPlace(i));
+        frag.appendChild(li);
       });
     }
-    list.hidden = false;
-  } catch {
-    list.innerHTML = '<li class="muted">Search failed — try again</li>';
-    list.hidden = false;
+    list.replaceChildren(frag);
+    openResults();
+  } catch (err) {
+    if (err.name === 'AbortError') return; // a newer keystroke superseded this
+    currentPlaces = [];
+    list.replaceChildren(mutedItem('Search failed — try again'));
+    openResults();
   }
 }
 
+// ---- Geolocation ----
+
 function useMyLocation() {
   if (!navigator.geolocation) { showStatus('Geolocation unavailable.', true); return; }
+  showStatus('Locating…');
   navigator.geolocation.getCurrentPosition(async (pos) => {
     const { latitude: lat, longitude: lon } = pos.coords;
     let name = 'Current Location';
     try {
       const res = await fetch(reverseGeocodeUrl(lat, lon));
-      const j = await res.json();
-      name = [j.city, j.principalSubdivision].filter(Boolean).join(', ') || name;
+      if (res.ok) {
+        const j = await res.json();
+        name = [j.city, j.principalSubdivision].filter(Boolean).join(', ') || name;
+      }
     } catch { /* keep fallback name */ }
     setLocation({ name, lat, lon });
-  }, () => {
-    showStatus('Location permission denied — search instead.', false);
-  });
+  }, (err) => {
+    // 1 = permission denied (soft), 2 = unavailable, 3 = timeout
+    const map = {
+      1: ['Location permission denied — search instead.', false],
+      2: ['Location unavailable — search a city instead.', true],
+      3: ['Location request timed out — try again.', true],
+    };
+    const [msg, isErr] = map[err.code] || ['Could not get your location — search instead.', true];
+    showStatus(msg, isErr);
+  }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 10 * 60 * 1000 });
 }
 
 function toggleUnit() {
@@ -214,15 +316,42 @@ $('search-input').addEventListener('input', (e) => {
   const q = e.target.value;
   searchDebounce = setTimeout(() => doSearch(q), 250);
 });
+$('search-input').addEventListener('keydown', (e) => {
+  const open = !$('search-results').hidden;
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault();
+      if (open) moveActive(1); else doSearch($('search-input').value);
+      break;
+    case 'ArrowUp':
+      if (open) { e.preventDefault(); moveActive(-1); }
+      break;
+    case 'Enter':
+      if (open && activeIndex >= 0) { e.preventDefault(); selectPlace(activeIndex); }
+      break;
+    case 'Escape':
+      closeResults();
+      break;
+  }
+});
 $('geo-btn').addEventListener('click', useMyLocation);
 $('unit-btn').addEventListener('click', toggleUnit);
+$('refresh-btn').addEventListener('click', () => refresh());
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.search')) $('search-results').hidden = true;
+  if (!e.target.closest('.search')) closeResults();
 });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refresh();
 });
 
 setUnitLabel();
+hydrateFromCache();
 refresh();
 refreshTimer = setInterval(refresh, 15 * 60 * 1000);
+
+// ---- Service worker (offline app shell) ----
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is best-effort */ });
+  });
+}

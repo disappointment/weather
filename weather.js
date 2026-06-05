@@ -80,6 +80,24 @@ export function metersToMiles(m) {
   return Math.round((m / 1609.344) * 10) / 10;
 }
 
+export function metersToKm(m) {
+  return Math.round((m / 1000) * 10) / 10;
+}
+
+// Single source of truth for unit choices, derived from the temperature unit.
+// Keeps wind/precip/distance consistent instead of mixing metric and imperial.
+export function unitConfig(temperatureUnit) {
+  const metric = temperatureUnit === 'celsius';
+  return {
+    temperatureUnit,
+    windSpeedUnit: metric ? 'kmh' : 'mph',
+    precipitationUnit: metric ? 'mm' : 'inch',
+    windLabel: metric ? 'km/h' : 'mph',
+    distanceLabel: metric ? 'km' : 'mi',
+    distanceFrom: metric ? metersToKm : metersToMiles,
+  };
+}
+
 export function rangeBar(min, max, weekMin, weekMax) {
   const span = weekMax - weekMin;
   if (span <= 0) return { left: 0, width: 100 };
@@ -125,15 +143,16 @@ const DAILY = [
 ].join(',');
 
 export function forecastUrl(lat, lon, unit) {
+  const u = unitConfig(unit);
   const p = new URLSearchParams({
     latitude: lat,
     longitude: lon,
     current: CURRENT,
     hourly: HOURLY,
     daily: DAILY,
-    temperature_unit: unit,
-    wind_speed_unit: 'mph',
-    precipitation_unit: 'inch',
+    temperature_unit: u.temperatureUnit,
+    wind_speed_unit: u.windSpeedUnit,
+    precipitation_unit: u.precipitationUnit,
     timezone: 'auto',
   });
   return `https://api.open-meteo.com/v1/forecast?${p.toString()}`;
