@@ -3,7 +3,15 @@
 A clean, client-side weather forecast page. Data from Open-Meteo (no API key).
 
 ## Run locally
-Open `index.html` directly in a browser. No build step.
+The page uses ES modules, so Chrome/Edge block it over the `file://` scheme —
+serve it over HTTP instead (no build step; any static server works):
+
+```
+python -m http.server 8099   # then open http://localhost:8099
+```
+
+(or `npx serve`). This matches how nginx serves it in production. Firefox can
+open `index.html` directly, but a local server is the reliable path.
 
 ## Test the logic
 `npm test`  (uses Node's built-in test runner; no dependencies)
