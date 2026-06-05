@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="clear-day">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weather</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Inline SVG icon definitions; referenced via <use href="#icon-..."> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/><line x1="4" y1="4" x2="6" y2="6"/><line x1="18" y1="18" x2="20" y2="20"/><line x1="4" y1="20" x2="6" y2="18"/><line x1="18" y1="6" x2="20" y2="4"/></g></symbol>
+      <symbol id="icon-moon" viewBox="0 0 24 24"><path fill="currentColor" d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></symbol>
+      <symbol id="icon-cloud" viewBox="0 0 24 24"><path fill="currentColor" d="M7 18a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 18z"/></symbol>
+      <symbol id="icon-partly-day" viewBox="0 0 24 24"><circle cx="8" cy="8" r="3.2" fill="currentColor"/><path fill="currentColor" d="M10 19a3.5 3.5 0 010-7 4.4 4.4 0 018.4-1.1A3.9 3.9 0 0118 19z"/></symbol>
+      <symbol id="icon-partly-night" viewBox="0 0 24 24"><path fill="currentColor" d="M14 4a5 5 0 00-3.5 8.2A4.4 4.4 0 0118 11a3.9 3.9 0 010 .2A5 5 0 0014 4z" opacity=".9"/><path fill="currentColor" d="M9 19a3.5 3.5 0 010-7 4.4 4.4 0 018.4-1.1A3.9 3.9 0 0117 19z"/></symbol>
+      <symbol id="icon-rain" viewBox="0 0 24 24"><path fill="currentColor" d="M7 15a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 15z"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="18" x2="7" y2="21"/><line x1="12" y1="18" x2="11" y2="21"/><line x1="16" y1="18" x2="15" y2="21"/></g></symbol>
+      <symbol id="icon-snow" viewBox="0 0 24 24"><path fill="currentColor" d="M7 15a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 15z"/><g fill="currentColor"><circle cx="8" cy="19" r="1"/><circle cx="12" cy="20" r="1"/><circle cx="16" cy="19" r="1"/></g></symbol>
+      <symbol id="icon-fog" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="9" x2="21" y2="9"/><line x1="5" y1="13" x2="19" y2="13"/><line x1="4" y1="17" x2="20" y2="17"/></g></symbol>
+      <symbol id="icon-thunder" viewBox="0 0 24 24"><path fill="currentColor" d="M7 14a4 4 0 010-8 5 5 0 019.6-1.3A4.5 4.5 0 0117 14z"/><path fill="currentColor" d="M11 13l-3 5h3l-1 4 4-6h-3z"/></symbol>
+    </defs>
+  </svg>
+
+  <main class="app">
+    <header class="controls">
+      <div class="search">
+        <input id="search-input" type="text" placeholder="Search city…"
+               autocomplete="off" aria-label="Search city">
+        <ul id="search-results" class="results" hidden></ul>
+      </div>
+      <button id="geo-btn" class="icon-btn" title="Use my location" aria-label="Use my location">📍</button>
+      <button id="unit-btn" class="unit-toggle" aria-label="Toggle units">°F</button>
+    </header>
+
+    <section id="status" class="status" hidden></section>
+
+    <section id="hero" class="hero" hidden>
+      <div class="place" id="place-name"></div>
+      <div class="now">
+        <svg class="hero-icon"><use id="hero-icon-use" href="#icon-sun"></use></svg>
+        <div class="temp" id="hero-temp"></div>
+      </div>
+      <div class="condition" id="hero-condition"></div>
+      <div class="hilo">
+        <span id="hero-feels"></span> &middot;
+        <span id="hero-hi"></span> / <span id="hero-lo"></span>
+      </div>
+    </section>
+
+    <section id="hourly-card" class="card hourly" hidden>
+      <h2 class="card-title">Hourly</h2>
+      <div class="hourly-strip" id="hourly-strip"></div>
+    </section>
+
+    <section id="daily-card" class="card daily" hidden>
+      <h2 class="card-title">7-Day</h2>
+      <div class="daily-list" id="daily-list"></div>
+    </section>
+
+    <section id="tiles-card" class="tiles" hidden>
+      <div class="tile"><span class="tile-label">Wind</span><span class="tile-value" id="t-wind"></span></div>
+      <div class="tile"><span class="tile-label">Humidity</span><span class="tile-value" id="t-humidity"></span></div>
+      <div class="tile"><span class="tile-label">UV Index</span><span class="tile-value" id="t-uv"></span></div>
+      <div class="tile"><span class="tile-label">Sunrise</span><span class="tile-value" id="t-sunrise"></span></div>
+      <div class="tile"><span class="tile-label">Sunset</span><span class="tile-value" id="t-sunset"></span></div>
+      <div class="tile"><span class="tile-label">Pressure</span><span class="tile-value" id="t-pressure"></span></div>
+      <div class="tile"><span class="tile-label">Visibility</span><span class="tile-value" id="t-visibility"></span></div>
+    </section>
+
+    <section id="empty" class="empty">
+      <p>Search for a city or tap 📍 to use your location.</p>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
