@@ -137,12 +137,12 @@ function renderHourly(hours) {
   // cells because it shares the scroll container and matches their pitch.
   strip.innerHTML = metricGraphSvg(hours, hourlyMetric);
   const frag = document.createDocumentFragment();
-  hours.forEach((h, i) => {
+  hours.forEach((h) => {
     const d = describeWeather(h.code, h.isDay);
     const cell = document.createElement('div');
     cell.className = 'hour';
     cell.innerHTML = `
-      <div class="h-time">${i === 0 ? 'Now' : formatHourLabel(h.time)}</div>
+      <div class="h-time">${formatHourLabel(h.time)}</div>
       <svg data-icon="${d.icon}" viewBox="0 0 24 24" aria-hidden="true"><use href="${iconHref(d.icon)}"></use></svg>
       <div class="h-val">${m.cell(m.value(h))}</div>`;
     frag.appendChild(cell);
