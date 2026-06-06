@@ -9,10 +9,13 @@ const LS_LOC = 'weather.location';
 const LS_UNIT = 'weather.unit';
 const LS_DATA = 'weather.lastData';
 const LS_METRIC = 'weather.metric';
+const LS_ICON_SET = 'weather.iconSet';
 
 let unit = localStorage.getItem(LS_UNIT) || 'fahrenheit';
+let iconSet = localStorage.getItem(LS_ICON_SET) || 'illustrated';
 let location_ = loadJSON(LS_LOC); // { name, lat, lon } | null
 let lastData = null;
+let lastUpdatedAt = null;
 let lastHours = [];               // sliced hourly data, kept for metric re-renders
 let hourlyMetric = localStorage.getItem(LS_METRIC) || 'temp';
 let refreshTimer = null;
@@ -33,6 +36,11 @@ function setUnitLabel() {
   $('unit-btn').textContent = unit === 'fahrenheit' ? '°F' : '°C';
 }
 
+function setIconSetControl() {
+  const select = $('icon-set');
+  if (select) select.value = ICON_SETS.has(iconSet) ? iconSet : 'illustrated';
+}
+
 function showStatus(msg, isError = false) {
   const el = $('status');
   // Errors interrupt; routine status is announced politely.
@@ -48,6 +56,40 @@ function setTheme(theme) {
 
 function iconHref(name) { return `#icon-${name}`; }
 
+const ICON_SETS = new Set(['illustrated', 'emoji', 'line']);
+const EMOJI_ICON = {
+  sun: '☀️',
+  moon: '🌙',
+  'partly-day': '🌤️',
+  'partly-night': '☁️',
+  cloud: '☁️',
+  rain: '🌧️',
+  snow: '❄️',
+  fog: '🌫️',
+  thunder: '⛈️',
+};
+const LINE_ICON = {
+  sun: '☼',
+  moon: '☾',
+  'partly-day': '◐',
+  'partly-night': '◑',
+  cloud: '☁',
+  rain: '☔',
+  snow: '✻',
+  fog: '≋',
+  thunder: 'ϟ',
+};
+
+function weatherIconHtml(name, className = 'weather-icon') {
+  if (iconSet === 'emoji') {
+    return `<span class="${className} weather-emoji" data-icon="${name}" aria-hidden="true">${EMOJI_ICON[name] || '☁️'}</span>`;
+  }
+  if (iconSet === 'line') {
+    return `<span class="${className} weather-line" data-icon="${name}" aria-hidden="true">${LINE_ICON[name] || '☁'}</span>`;
+  }
+  return `<svg class="${className}" data-icon="${name}" viewBox="0 0 24 24" aria-hidden="true"><use href="${iconHref(name)}"></use></svg>`;
+}
+
 function formatClock(iso) {
   return new Date(iso).toLocaleTimeString('en-US',
     { hour: 'numeric', minute: '2-digit' });
@@ -58,32 +100,64 @@ function formatHourLabel(iso) {
 function formatWeekday(iso) {
   return new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
 }
+function formatDayLabel(iso, i) {
+  return i === 0 ? 'today' : formatWeekday(iso);
+}
+function sentenceCase(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+}
 function formatUpdated(date) {
   return 'Updated ' + date.toLocaleTimeString('en-US',
     { hour: 'numeric', minute: '2-digit' });
+}
+function formatValue(v, suffix = '') {
+  return Number.isFinite(v) ? `${Math.round(v)}${suffix}` : '—';
+}
+function uvCategory(v) {
+  if (!Number.isFinite(v)) return 'Unknown';
+  if (v < 3) return 'Low';
+  if (v < 6) return 'Moderate';
+  if (v < 8) return 'High';
+  if (v < 11) return 'Very high';
+  return 'Extreme';
+}
+function formatUv(v) {
+  return Number.isFinite(v) ? `${Math.round(v)} (${uvCategory(v)})` : '—';
 }
 
 // ---- Rendering ----
 
 function show(id) { $(id).hidden = false; }
 
+function setDetail(el, text) {
+  if (!el) return;
+  el.dataset.detail = text;
+  el.title = text;
+  el.classList.add('detail-target');
+  if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
+}
+
 function renderHero(cur, daily, name) {
   const d = describeWeather(cur.weather_code, cur.is_day);
+  const u = unitConfig(unit);
   setTheme(d.theme);
   show('hero-shell');
   $('place-name').textContent = name;
   $('hero-temp').textContent = Math.round(cur.temperature_2m);
-  $('hero-icon-use').closest('svg').dataset.icon = d.icon;
-  $('hero-icon-use').setAttribute('href', iconHref(d.icon));
+  $('hero-icon-slot').innerHTML = weatherIconHtml(d.icon, 'hero-icon weather-icon');
   $('hero-condition').textContent = d.label;
   $('hero-feels').textContent = `Feels ${Math.round(cur.apparent_temperature)}°`;
   $('hero-hi').textContent = `H ${Math.round(daily.temperature_2m_max[0])}°`;
   $('hero-lo').textContent = `L ${Math.round(daily.temperature_2m_min[0])}°`;
+  setDetail($('hero-shell'),
+    `${name}: ${d.label}, ${Math.round(cur.temperature_2m)}° and feels like ${Math.round(cur.apparent_temperature)}°. ` +
+    `High ${Math.round(daily.temperature_2m_max[0])}°, low ${Math.round(daily.temperature_2m_min[0])}°. ` +
+    `Wind ${Math.round(cur.wind_speed_10m)} ${u.windLabel} ${degToCompass(cur.wind_direction_10m)}; humidity ${cur.relative_humidity_2m}%.`);
   show('hero');
 }
 
-const GRAPH_H = 40;
-const GRAPH_PAD = 6;
+const GRAPH_H = 84;
+const GRAPH_PAD = 10;
 
 // Hourly graph metrics (Google-style toggle). Each maps an hour to a value,
 // formats the per-cell label, and pins the graph's y-domain where it matters.
@@ -92,21 +166,138 @@ const METRICS = {
     label: 'Temp',
     value: (h) => h.temp,
     cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}°` : '—'),
+    axis: (v) => `${Math.round(v)}°`,
     domain: () => ({}), // auto min/max — temperature is about the shape
   },
   precip: {
     label: 'Precip',
     value: (h) => h.precip,
     cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}%` : '—'),
+    axis: (v) => `${Math.round(v)}%`,
     domain: () => ({ min: 0, max: 100 }), // probability is absolute 0–100
   },
   wind: {
     label: 'Wind',
     value: (h) => h.wind,
-    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}` : '—'),
+    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)} ${unitConfig(unit).windLabel}` : '—'),
+    axis: (v) => `${Math.round(v)} ${unitConfig(unit).windLabel}`,
     domain: () => ({ min: 0 }), // baseline at calm
   },
 };
+
+function maxBy(items, getValue) {
+  return items.reduce((best, item, index) => {
+    const value = Number(getValue(item, index));
+    if (!Number.isFinite(value)) return best;
+    return !best || value > best.value ? { item, index, value } : best;
+  }, null);
+}
+
+function summarizeHourly(hours) {
+  const warmest = maxBy(hours, (h) => h.temp);
+  const wettest = maxBy(hours, (h) => h.precip);
+  const windiest = maxBy(hours, (h) => h.wind);
+  const parts = [];
+
+  if (warmest) {
+    parts.push(`Warmest around ${formatHourLabel(warmest.item.time)} (${Math.round(warmest.value)}°)`);
+  }
+
+  if (wettest && wettest.value >= 50) {
+    parts.push(`wettest around ${formatHourLabel(wettest.item.time)} (${Math.round(wettest.value)}%)`);
+  } else if (wettest && wettest.value >= 25) {
+    parts.push(`some rain chance, peaking near ${formatHourLabel(wettest.item.time)}`);
+  } else {
+    parts.push('low rain chance');
+  }
+
+  if (windiest && windiest.value >= 18) {
+    parts.push(`breeziest near ${formatHourLabel(windiest.item.time)}`);
+  }
+
+  return parts.join('; ') + '.';
+}
+
+function summarizeDaily(daily) {
+  const days = daily.time.map((time, index) => ({
+    time,
+    index,
+    high: daily.temperature_2m_max[index],
+    low: daily.temperature_2m_min[index],
+    precip: daily.precipitation_probability_max[index],
+    code: daily.weather_code[index],
+  }));
+  const today = days[0];
+  const warmest = maxBy(days, (d) => d.high);
+  const wettest = maxBy(days, (d) => d.precip);
+  const parts = [];
+
+  if (today) {
+    const condition = sentenceCase(describeWeather(today.code, 1).label.toLowerCase());
+    parts.push(`${condition} today, ${Math.round(today.high)}°/${Math.round(today.low)}°`);
+  }
+
+  if (wettest && wettest.value >= 30) {
+    parts.push(`rain odds highest ${formatDayLabel(wettest.item.time, wettest.index)} (${Math.round(wettest.value)}%)`);
+  } else {
+    parts.push('mostly low rain odds this week');
+  }
+
+  if (warmest && warmest.index > 0) {
+    parts.push(`warmest ${formatDayLabel(warmest.item.time, warmest.index)}`);
+  }
+
+  return parts.join('; ') + '.';
+}
+
+function daylightCodesForDate(hourly, dateIso) {
+  if (!hourly?.time) return [];
+  const codes = [];
+  hourly.time.forEach((time, i) => {
+    if (!time.startsWith(dateIso) || !Number(hourly.is_day?.[i])) return;
+    const code = hourly.weather_code?.[i];
+    if (Number.isFinite(code)) codes.push(code);
+  });
+  return codes;
+}
+
+function dailyDisplayCode(dailyCode, hourly, dateIso) {
+  const codes = daylightCodesForDate(hourly, dateIso);
+  if (!codes.length) return dailyCode;
+
+  const hasSunBreaks = codes.some((code) => [0, 1, 2].includes(code));
+  const hasClouds = codes.some((code) => [2, 3].includes(code));
+  if ([0, 1, 2, 3].includes(dailyCode) && hasSunBreaks && hasClouds) return 2;
+
+  return dailyCode;
+}
+
+function hourlyDetail(h) {
+  const d = describeForecastIcon(h.code, h.isDay, h.precip);
+  const u = unitConfig(unit);
+  return `${formatHourLabel(h.time)}: ${d.label}. ` +
+    `Temp ${formatValue(h.temp, '°')}; rain chance ${formatValue(h.precip, '%')}; ` +
+    `wind ${Number.isFinite(h.wind) ? `${Math.round(h.wind)} ${u.windLabel}` : '—'}.`;
+}
+
+function dailyDetail(daily, i, hourly) {
+  const label = i === 0 ? 'Today' : formatWeekday(daily.time[i]);
+  const code = dailyDisplayCode(daily.weather_code[i], hourly, daily.time[i]);
+  const d = describeForecastIcon(code, 1, daily.precipitation_probability_max[i]);
+  const precip = daily.precipitation_probability_max[i];
+  return `${label}: ${d.label}. ` +
+    `High ${formatValue(daily.temperature_2m_max[i], '°')}, low ${formatValue(daily.temperature_2m_min[i], '°')}. ` +
+    `Rain chance ${formatValue(precip, '%')}; UV max ${formatUv(daily.uv_index_max[i])}. ` +
+    `Sunrise ${formatClock(daily.sunrise[i])}; sunset ${formatClock(daily.sunset[i])}.`;
+}
+
+function describeForecastIcon(code, isDay, precip) {
+  const d = describeWeather(code, isDay);
+  if (Number.isFinite(precip) && precip >= 35 && !['rain', 'snow', 'thunder'].includes(d.icon)) {
+    return { ...d, icon: 'rain', label: precip >= 60 ? 'Rain likely' : 'Rain possible' };
+  }
+  return d;
+}
 
 function pathFromPoints(points) {
   return points.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
@@ -139,9 +330,20 @@ function metricGraphSvg(hours, metric, width, centers) {
   const last = points[points.length - 1];
   const area = `${line} L ${last.x.toFixed(1)} ${GRAPH_H} L ${first.x.toFixed(1)} ${GRAPH_H} Z`;
   const dots = points.map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.7"/>`).join('');
+  const topY = GRAPH_PAD;
+  const bottomY = GRAPH_H - GRAPH_PAD;
+  const labelX = Math.max(42, width - 4);
+  const topLabel = m.axis(max);
+  const bottomLabel = m.axis(min);
   return `
     <svg class="hourly-graph" width="${width}" height="${GRAPH_H}"
          viewBox="0 0 ${width} ${GRAPH_H}" aria-hidden="true">
+      <g class="graph-axis">
+        <line x1="0" y1="${topY}" x2="${width}" y2="${topY}"/>
+        <line x1="0" y1="${bottomY}" x2="${width}" y2="${bottomY}"/>
+        <text x="${labelX}" y="${topY + 3}" text-anchor="end">${topLabel}</text>
+        <text x="${labelX}" y="${bottomY + 3}" text-anchor="end">${bottomLabel}</text>
+      </g>
       <path class="graph-area" d="${area}"/>
       <path class="graph-line" d="${line}"/>
       <g class="graph-dots">${dots}</g>
@@ -174,16 +376,18 @@ function renderHourly(hours) {
   strip.style.setProperty('--hour-count', Math.max(hours.length, 1));
   const frag = document.createDocumentFragment();
   hours.forEach((h) => {
-    const d = describeWeather(h.code, h.isDay);
+    const d = describeForecastIcon(h.code, h.isDay, h.precip);
     const cell = document.createElement('div');
     cell.className = 'hour';
     cell.innerHTML = `
       <div class="h-time">${formatHourLabel(h.time)}</div>
-      <svg data-icon="${d.icon}" viewBox="0 0 24 24" aria-hidden="true"><use href="${iconHref(d.icon)}"></use></svg>
+      ${weatherIconHtml(d.icon)}
       <div class="h-val">${m.cell(m.value(h))}</div>`;
+    setDetail(cell, hourlyDetail(h));
     frag.appendChild(cell);
   });
   strip.appendChild(frag);
+  $('hourly-summary').textContent = summarizeHourly(hours);
   syncMetricToggle();
   show('hourly-card');
   renderHourlyGraph(strip, hours, hourlyMetric, renderId);
@@ -214,12 +418,14 @@ function setMetric(metric) {
   else syncMetricToggle();
 }
 
-function renderDaily(daily) {
+function renderDaily(daily, hourly) {
   const weekMin = Math.min(...daily.temperature_2m_min);
   const weekMax = Math.max(...daily.temperature_2m_max);
   const frag = document.createDocumentFragment();
+  $('daily-summary').textContent = summarizeDaily(daily);
   daily.time.forEach((iso, i) => {
-    const d = describeWeather(daily.weather_code[i], 1);
+    const code = dailyDisplayCode(daily.weather_code[i], hourly, iso);
+    const d = describeForecastIcon(code, 1, daily.precipitation_probability_max[i]);
     const bar = rangeBar(daily.temperature_2m_min[i],
                          daily.temperature_2m_max[i], weekMin, weekMax);
     const precip = daily.precipitation_probability_max[i];
@@ -227,7 +433,7 @@ function renderDaily(daily) {
     row.className = 'day-row';
     row.innerHTML = `
       <span class="d-name">${i === 0 ? 'Today' : formatWeekday(iso)}</span>
-      <svg data-icon="${d.icon}" viewBox="0 0 24 24" aria-hidden="true"><use href="${iconHref(d.icon)}"></use></svg>
+      ${weatherIconHtml(d.icon)}
       <span class="d-precip">${precip > 0 ? precip + '%' : ''}</span>
       <span class="day-range">
         <span class="range-lo">${Math.round(daily.temperature_2m_min[i])}°</span>
@@ -235,6 +441,7 @@ function renderDaily(daily) {
           style="left:${bar.left}%;width:${bar.width}%"></span></span>
         <span class="range-hi">${Math.round(daily.temperature_2m_max[i])}°</span>
       </span>`;
+    setDetail(row, dailyDetail(daily, i, hourly));
     frag.appendChild(row);
   });
   $('daily-list').replaceChildren(frag);
@@ -246,12 +453,24 @@ function renderTiles(cur, daily, firstHour) {
   $('t-wind').textContent =
     `${Math.round(cur.wind_speed_10m)} ${u.windLabel} ${degToCompass(cur.wind_direction_10m)}`;
   $('t-humidity').textContent = `${cur.relative_humidity_2m}%`;
-  $('t-uv').textContent = Math.round(firstHour ? firstHour.uv : daily.uv_index_max[0]);
+  $('t-uv').textContent = formatUv(firstHour ? firstHour.uv : daily.uv_index_max[0]);
   $('t-sunrise').textContent = formatClock(daily.sunrise[0]);
   $('t-sunset').textContent = formatClock(daily.sunset[0]);
   $('t-pressure').textContent = `${Math.round(cur.surface_pressure)} hPa`;
   $('t-visibility').textContent = firstHour
     ? `${u.distanceFrom(firstHour.visibility)} ${u.distanceLabel}` : '—';
+  setDetail($('t-wind').closest('.tile'),
+    `Wind speed is ${Math.round(cur.wind_speed_10m)} ${u.windLabel}, blowing ${degToCompass(cur.wind_direction_10m)}.`);
+  setDetail($('t-humidity').closest('.tile'),
+    `Relative humidity is ${cur.relative_humidity_2m}%; higher values make warm air feel heavier.`);
+  setDetail($('t-uv').closest('.tile'),
+    `UV index is ${formatUv(firstHour ? firstHour.uv : daily.uv_index_max[0])}; stronger sun exposure needs more protection.`);
+  setDetail($('t-sunrise').closest('.tile'), `Sunrise today is ${formatClock(daily.sunrise[0])}.`);
+  setDetail($('t-sunset').closest('.tile'), `Sunset today is ${formatClock(daily.sunset[0])}.`);
+  setDetail($('t-pressure').closest('.tile'),
+    `Surface pressure is ${Math.round(cur.surface_pressure)} hPa; falling pressure often points to unsettled weather.`);
+  setDetail($('t-visibility').closest('.tile'),
+    firstHour ? `Visibility is about ${u.distanceFrom(firstHour.visibility)} ${u.distanceLabel}.` : 'Visibility data is unavailable.');
   show('tiles-card');
 }
 
@@ -260,16 +479,52 @@ function setUpdated(date) {
   $('refresh-btn').hidden = false;
 }
 
+let detailTarget = null;
+function positionDetailTooltip(target) {
+  const tip = $('detail-tooltip');
+  const rect = target.getBoundingClientRect();
+  const pad = 8;
+  const tipWidth = tip.offsetWidth;
+  const tipHeight = tip.offsetHeight;
+  let left = rect.left + rect.width / 2 - tipWidth / 2;
+  let top = rect.top - tipHeight - pad;
+
+  left = Math.max(pad, Math.min(window.innerWidth - tipWidth - pad, left));
+  if (top < pad) top = rect.bottom + pad;
+  top = Math.max(pad, Math.min(window.innerHeight - tipHeight - pad, top));
+
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function showDetailTooltip(target) {
+  if (!target?.dataset.detail) return;
+  detailTarget = target;
+  const tip = $('detail-tooltip');
+  tip.textContent = target.dataset.detail;
+  tip.hidden = false;
+  requestAnimationFrame(() => {
+    if (detailTarget === target) positionDetailTooltip(target);
+  });
+}
+
+function hideDetailTooltip(target) {
+  if (target && detailTarget !== target) return;
+  detailTarget = null;
+  $('detail-tooltip').hidden = true;
+}
+
 function renderAll(data, name, updatedAt) {
+  lastUpdatedAt = updatedAt || lastUpdatedAt;
   const hours = sliceNext24(data.hourly, data.current.time);
   lastHours = groupHours(hours, 3); // 3-hour blocks for the strip
   renderHero(data.current, data.daily, name);
   renderHourly(lastHours);
-  renderDaily(data.daily);
+  renderDaily(data.daily, data.hourly);
   renderTiles(data.current, data.daily, hours[0]); // raw current hour for tiles
   $('empty').hidden = true;
   showStatus('');
-  setUpdated(updatedAt);
+  setUpdated(lastUpdatedAt);
 }
 
 // ---- Data flow ----
@@ -416,30 +671,48 @@ async function doSearch(query) {
 
 // ---- Geolocation ----
 
+async function isLocationBlockedForSite() {
+  if (!navigator.permissions?.query) return false;
+  try {
+    const permission = await navigator.permissions.query({ name: 'geolocation' });
+    return permission.state === 'denied';
+  } catch {
+    return false;
+  }
+}
+
 function useMyLocation() {
   if (!navigator.geolocation) { showStatus('Geolocation unavailable.', true); return; }
   showStatus('Locating…');
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    const { latitude: lat, longitude: lon } = pos.coords;
-    let name = 'Current Location';
-    try {
-      const res = await fetch(reverseGeocodeUrl(lat, lon));
-      if (res.ok) {
-        const j = await res.json();
-        name = [j.city, j.principalSubdivision].filter(Boolean).join(', ') || name;
-      }
-    } catch { /* keep fallback name */ }
-    setLocation({ name, lat, lon });
-  }, (err) => {
-    // 1 = permission denied (soft), 2 = unavailable, 3 = timeout
-    const map = {
-      1: ['Location permission denied — search instead.', false],
-      2: ['Location unavailable — search a city instead.', true],
-      3: ['Location request timed out — try again.', true],
-    };
-    const [msg, isErr] = map[err.code] || ['Could not get your location — search instead.', true];
-    showStatus(msg, isErr);
-  }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 10 * 60 * 1000 });
+
+  isLocationBlockedForSite().then((blocked) => {
+    if (blocked) {
+      showStatus('Location is blocked for this site — allow it in browser permissions, or search instead.', false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const { latitude: lat, longitude: lon } = pos.coords;
+      let name = 'Current Location';
+      try {
+        const res = await fetch(reverseGeocodeUrl(lat, lon));
+        if (res.ok) {
+          const j = await res.json();
+          name = [j.city, j.principalSubdivision].filter(Boolean).join(', ') || name;
+        }
+      } catch { /* keep fallback name */ }
+      setLocation({ name, lat, lon });
+    }, (err) => {
+      // 1 = permission denied, 2 = unavailable, 3 = timeout
+      const map = {
+        1: ['Location is blocked for this site — allow it in browser permissions, or search instead.', false],
+        2: ['Location unavailable — search a city instead.', true],
+        3: ['Location request timed out — try again.', true],
+      };
+      const [msg, isErr] = map[err.code] || ['Could not get your location — search instead.', true];
+      showStatus(msg, isErr);
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 10 * 60 * 1000 });
+  });
 }
 
 function toggleUnit() {
@@ -447,6 +720,14 @@ function toggleUnit() {
   localStorage.setItem(LS_UNIT, unit);
   setUnitLabel();
   refresh();
+}
+
+function setIconSet(next) {
+  if (!ICON_SETS.has(next)) return;
+  iconSet = next;
+  localStorage.setItem(LS_ICON_SET, iconSet);
+  setIconSetControl();
+  if (lastData && location_) renderAll(lastData, location_.name, lastUpdatedAt);
 }
 
 // ---- Events & init ----
@@ -476,6 +757,7 @@ $('search-input').addEventListener('keydown', (e) => {
   }
 });
 $('geo-btn').addEventListener('click', useMyLocation);
+$('icon-set').addEventListener('change', (e) => setIconSet(e.target.value));
 $('unit-btn').addEventListener('click', toggleUnit);
 $('refresh-btn').addEventListener('click', () => refresh());
 $('metric-toggle').addEventListener('click', (e) => {
@@ -485,10 +767,32 @@ $('metric-toggle').addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.search')) closeResults();
 });
+document.addEventListener('mouseover', (e) => {
+  const target = e.target.closest('[data-detail]');
+  if (target) showDetailTooltip(target);
+});
+document.addEventListener('mousemove', () => {
+  if (detailTarget && !$('detail-tooltip').hidden) positionDetailTooltip(detailTarget);
+});
+document.addEventListener('mouseout', (e) => {
+  const target = e.target.closest('[data-detail]');
+  if (target && !target.contains(e.relatedTarget)) hideDetailTooltip(target);
+});
+document.addEventListener('focusin', (e) => {
+  const target = e.target.closest('[data-detail]');
+  if (target) showDetailTooltip(target);
+});
+document.addEventListener('focusout', (e) => {
+  const target = e.target.closest('[data-detail]');
+  if (target) hideDetailTooltip(target);
+});
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refresh();
 });
-window.addEventListener('resize', redrawHourlyGraph);
+window.addEventListener('resize', () => {
+  redrawHourlyGraph();
+  if (detailTarget) positionDetailTooltip(detailTarget);
+});
 
 // A location in the URL (a bookmark/shared link) wins over the saved one.
 location_ = parseLocationParams(window.location.search) || location_;
@@ -498,6 +802,7 @@ if (location_) {
 }
 
 setUnitLabel();
+setIconSetControl();
 syncMetricToggle();
 hydrateFromCache();
 refresh();

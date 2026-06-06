@@ -3,7 +3,7 @@
 // code -> [label, group]
 export const CODE_TABLE = {
   0: ['Clear sky', 'clear'],
-  1: ['Mainly clear', 'clear'],
+  1: ['Mainly clear', 'partly'],
   2: ['Partly cloudy', 'partly'],
   3: ['Overcast', 'cloudy'],
   45: ['Fog', 'fog'],

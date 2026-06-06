@@ -14,7 +14,9 @@ test('describeWeather: clear day vs night', () => {
 });
 
 test('describeWeather: partly cloudy switches day/night', () => {
+  assert.equal(describeWeather(1, 1).icon, 'partly-day');
   assert.equal(describeWeather(2, 1).icon, 'partly-day');
+  assert.equal(describeWeather(1, 0).icon, 'partly-night');
   assert.equal(describeWeather(2, 0).icon, 'partly-night');
   assert.equal(describeWeather(2, 1).theme, 'partly-day');
 });
