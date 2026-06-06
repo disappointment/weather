@@ -328,6 +328,17 @@ function formatUv(v) {
 
 // ---- Rendering ----
 
+// A tile value with a smaller secondary line beneath the headline. Inputs are
+// app-generated (numbers, category labels, formatted times) — never user text.
+/**
+ * @param {string} primary
+ * @param {string} sub
+ * @returns {string}
+ */
+function tileValueHtml(primary, sub) {
+  return `${primary}<span class="tile-sub">${sub}</span>`;
+}
+
 /** @param {string} id */
 function show(id) { $(id).hidden = false; }
 
@@ -816,7 +827,10 @@ function renderTiles(cur, daily, firstHour) {
   $('t-wind').textContent =
     `${Math.round(cur.wind_speed_10m)} ${u.windLabel} ${degToCompass(cur.wind_direction_10m)}`;
   $('t-humidity').textContent = `${cur.relative_humidity_2m}%`;
-  $('t-uv').textContent = formatUv(firstHour ? firstHour.uv : daily.uv_index_max[0]);
+  const uvVal = firstHour ? firstHour.uv : daily.uv_index_max[0];
+  $('t-uv').innerHTML = Number.isFinite(uvVal)
+    ? tileValueHtml(String(Math.round(/** @type {number} */ (uvVal))), uvCategory(uvVal))
+    : '—';
   $('t-sunrise').textContent = formatClock(daily.sunrise[0]);
   $('t-sunset').textContent = formatClock(daily.sunset[0]);
   $('t-pressure').textContent = `${Math.round(cur.surface_pressure)} hPa`;
@@ -832,15 +846,15 @@ function renderTiles(cur, daily, firstHour) {
   setDetail($('t-sunset').closest('.tile'), `Sunset today is ${formatClock(daily.sunset[0])}.`);
 
   const golden = goldenHour(daily.sunrise[0], daily.sunset[0]);
-  $('t-golden').textContent =
-    `${formatClock(golden.evening.start)}–${formatClock(golden.evening.end)}`;
+  $('t-golden').innerHTML = tileValueHtml(
+    formatClock(golden.evening.start), `to ${formatClock(golden.evening.end)}`);
   setDetail($('t-golden').closest('.tile'),
     `Golden hour — soft, warm light for photos. Morning ` +
     `${formatClock(golden.morning.start)}–${formatClock(golden.morning.end)}; ` +
     `evening ${formatClock(golden.evening.start)}–${formatClock(golden.evening.end)}.`);
 
   const moon = moonPhase(new Date());
-  $('t-moon').textContent = `${moon.emoji} ${moon.name}`;
+  $('t-moon').innerHTML = tileValueHtml(moon.emoji, moon.name);
   setDetail($('t-moon').closest('.tile'),
     `${moon.name}, about ${Math.round(moon.illumination * 100)}% illuminated.`);
   setDetail($('t-pressure').closest('.tile'),

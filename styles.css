@@ -1138,7 +1138,19 @@ button {
   font-size: 20px;
   font-weight: 760;
   line-height: 1.12;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+/* Secondary qualifier under a tile's primary value (UV band, golden-hour end,
+   moon-phase name). Smaller so the headline stays prominent and long words
+   never have to break mid-word in a narrow tile. */
+.tile-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--muted);
 }
 
 .status,
