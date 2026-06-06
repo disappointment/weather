@@ -1,5 +1,5 @@
 import {
-  describeWeather, sliceNext24, groupHours, degToCompass, unitConfig, lineGraph,
+  describeWeather, sliceNext24, groupHours, degToCompass, unitConfig,
   rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
 } from './weather.js';
@@ -18,6 +18,7 @@ let hourlyMetric = localStorage.getItem(LS_METRIC) || 'temp';
 let refreshTimer = null;
 let forecastController = null; // aborts in-flight forecast fetches
 let searchController = null;    // aborts in-flight search fetches
+let hourlyRenderId = 0;
 
 // Search/combobox state
 let currentPlaces = [];
@@ -81,9 +82,6 @@ function renderHero(cur, daily, name) {
   show('hero');
 }
 
-// Cell geometry must match the CSS: .hour is HOUR_CELL wide with HOUR_GAP between.
-const HOUR_CELL = 58;
-const HOUR_GAP = 10;
 const GRAPH_H = 40;
 const GRAPH_PAD = 6;
 
@@ -110,33 +108,70 @@ const METRICS = {
   },
 };
 
-function metricGraphSvg(hours, metric) {
+function pathFromPoints(points) {
+  return points.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+}
+
+function metricGraphSvg(hours, metric, width, centers) {
   const m = METRICS[metric] || METRICS.temp;
-  const geom = {
-    pitch: HOUR_CELL + HOUR_GAP,
-    offsetX: HOUR_CELL / 2,
-    height: GRAPH_H,
-    padY: GRAPH_PAD,
-  };
-  const g = lineGraph(hours.map(m.value), geom, m.domain());
-  if (!g.points.length) return ''; // not enough data to draw a curve
-  const width = HOUR_CELL + (HOUR_CELL + HOUR_GAP) * (hours.length - 1);
-  const dots = g.points.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="1.7"/>`).join('');
+  const values = hours.map(m.value);
+  const valid = values
+    .map((value, i) => ({ value: Number(value), x: centers[i] }))
+    .filter((p) => Number.isFinite(p.value) && Number.isFinite(p.x));
+  if (valid.length < 2 || !Number.isFinite(width) || width <= 0) return '';
+
+  const domain = m.domain();
+  let min = Number.isFinite(domain.min) ? domain.min : Math.min(...valid.map((p) => p.value));
+  let max = Number.isFinite(domain.max) ? domain.max : Math.max(...valid.map((p) => p.value));
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+
+  const drawable = GRAPH_H - GRAPH_PAD * 2;
+  const points = valid.map((p) => {
+    const clamped = Math.max(min, Math.min(max, p.value));
+    const y = GRAPH_PAD + ((max - clamped) / (max - min)) * drawable;
+    return { x: p.x, y };
+  });
+  const line = pathFromPoints(points);
+  const first = points[0];
+  const last = points[points.length - 1];
+  const area = `${line} L ${last.x.toFixed(1)} ${GRAPH_H} L ${first.x.toFixed(1)} ${GRAPH_H} Z`;
+  const dots = points.map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.7"/>`).join('');
   return `
     <svg class="hourly-graph" width="${width}" height="${GRAPH_H}"
          viewBox="0 0 ${width} ${GRAPH_H}" aria-hidden="true">
-      <path class="graph-area" d="${g.area}"/>
-      <path class="graph-line" d="${g.line}"/>
+      <path class="graph-area" d="${area}"/>
+      <path class="graph-line" d="${line}"/>
       <g class="graph-dots">${dots}</g>
     </svg>`;
+}
+
+function renderHourlyGraph(strip, hours, metric, renderId) {
+  requestAnimationFrame(() => {
+    if (renderId !== hourlyRenderId) return;
+    strip.querySelector('.hourly-graph')?.remove();
+    const cells = [...strip.querySelectorAll('.hour')];
+    if (cells.length < 2) return;
+
+    const stripRect = strip.getBoundingClientRect();
+    const centers = cells.map((cell) => {
+      const rect = cell.getBoundingClientRect();
+      return rect.left - stripRect.left + rect.width / 2;
+    });
+    const lastRect = cells[cells.length - 1].getBoundingClientRect();
+    const contentWidth = Math.max(strip.clientWidth, lastRect.right - stripRect.left);
+    strip.insertAdjacentHTML('afterbegin', metricGraphSvg(hours, metric, Math.ceil(contentWidth), centers));
+  });
 }
 
 function renderHourly(hours) {
   const strip = $('hourly-strip');
   const m = METRICS[hourlyMetric] || METRICS.temp;
-  // Metric curve as a ribbon across the top of the strip; it scrolls with the
-  // cells because it shares the scroll container and matches their pitch.
-  strip.innerHTML = metricGraphSvg(hours, hourlyMetric);
+  const renderId = ++hourlyRenderId;
+  strip.textContent = '';
+  strip.style.setProperty('--hour-count', Math.max(hours.length, 1));
   const frag = document.createDocumentFragment();
   hours.forEach((h) => {
     const d = describeWeather(h.code, h.isDay);
@@ -151,6 +186,16 @@ function renderHourly(hours) {
   strip.appendChild(frag);
   syncMetricToggle();
   show('hourly-card');
+  renderHourlyGraph(strip, hours, hourlyMetric, renderId);
+}
+
+let hourlyResizeDebounce;
+function redrawHourlyGraph() {
+  if (!lastHours.length || $('hourly-card').hidden) return;
+  clearTimeout(hourlyResizeDebounce);
+  hourlyResizeDebounce = setTimeout(() => {
+    renderHourlyGraph($('hourly-strip'), lastHours, hourlyMetric, ++hourlyRenderId);
+  }, 80);
 }
 
 function syncMetricToggle() {
@@ -443,6 +488,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) refresh();
 });
+window.addEventListener('resize', redrawHourlyGraph);
 
 // A location in the URL (a bookmark/shared link) wins over the saved one.
 location_ = parseLocationParams(window.location.search) || location_;

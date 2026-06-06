@@ -484,7 +484,8 @@ button {
 
 .hourly-strip {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(var(--hour-count, 1), minmax(54px, 1fr));
   gap: 8px;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
@@ -521,7 +522,7 @@ button {
 }
 
 .hour {
-  flex: 0 0 54px;
+  min-width: 54px;
   min-height: 90px;
   display: grid;
   grid-template-rows: 18px 28px 18px;
