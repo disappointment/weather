@@ -37,8 +37,13 @@ function setUnitLabel() {
 }
 
 function setIconSetControl() {
-  const select = $('icon-set');
-  if (select) select.value = ICON_SETS.has(iconSet) ? iconSet : 'illustrated';
+  const active = ICON_SETS.has(iconSet) ? iconSet : 'illustrated';
+  $('icon-set-label').textContent = ICON_SET_LABELS[active];
+  $('icon-set-menu').querySelectorAll('[role="option"]').forEach((option) => {
+    const selected = option.dataset.iconSet === active;
+    option.setAttribute('aria-selected', selected ? 'true' : 'false');
+    option.classList.toggle('active', selected);
+  });
 }
 
 function showStatus(msg, isError = false) {
@@ -78,6 +83,11 @@ const LINE_ICON = {
   snow: '✻',
   fog: '≋',
   thunder: 'ϟ',
+};
+const ICON_SET_LABELS = {
+  illustrated: 'Illustrated',
+  emoji: 'Emoji',
+  line: 'Line',
 };
 
 function weatherIconHtml(name, className = 'weather-icon') {
@@ -737,7 +747,23 @@ function setIconSet(next) {
   iconSet = next;
   localStorage.setItem(LS_ICON_SET, iconSet);
   setIconSetControl();
+  closeIconSetMenu();
   if (lastData && location_) renderAll(lastData, location_.name, lastUpdatedAt);
+}
+
+function openIconSetMenu() {
+  $('icon-set-menu').hidden = false;
+  $('icon-set-btn').setAttribute('aria-expanded', 'true');
+}
+
+function closeIconSetMenu() {
+  $('icon-set-menu').hidden = true;
+  $('icon-set-btn').setAttribute('aria-expanded', 'false');
+}
+
+function toggleIconSetMenu() {
+  if ($('icon-set-menu').hidden) openIconSetMenu();
+  else closeIconSetMenu();
 }
 
 // ---- Events & init ----
@@ -767,7 +793,35 @@ $('search-input').addEventListener('keydown', (e) => {
   }
 });
 $('geo-btn').addEventListener('click', useMyLocation);
-$('icon-set').addEventListener('change', (e) => setIconSet(e.target.value));
+$('icon-set-btn').addEventListener('click', toggleIconSetMenu);
+$('icon-set-menu').addEventListener('click', (e) => {
+  const option = e.target.closest('[data-icon-set]');
+  if (option) setIconSet(option.dataset.iconSet);
+});
+$('icon-set-btn').addEventListener('keydown', (e) => {
+  if (['ArrowDown', 'Enter', ' '].includes(e.key)) {
+    e.preventDefault();
+    openIconSetMenu();
+    $('icon-set-menu').querySelector('.active')?.focus();
+  }
+});
+$('icon-set-menu').addEventListener('keydown', (e) => {
+  const options = [...$('icon-set-menu').querySelectorAll('[data-icon-set]')];
+  const current = options.indexOf(document.activeElement);
+  if (e.key === 'Escape') {
+    closeIconSetMenu();
+    $('icon-set-btn').focus();
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    options[(current + 1) % options.length].focus();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    options[(current - 1 + options.length) % options.length].focus();
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    if (document.activeElement?.dataset.iconSet) setIconSet(document.activeElement.dataset.iconSet);
+  }
+});
 $('unit-btn').addEventListener('click', toggleUnit);
 $('refresh-btn').addEventListener('click', () => refresh());
 $('metric-toggle').addEventListener('click', (e) => {
@@ -776,6 +830,7 @@ $('metric-toggle').addEventListener('click', (e) => {
 });
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.search')) closeResults();
+  if (!e.target.closest('.icon-set-control')) closeIconSetMenu();
 });
 document.addEventListener('mouseover', (e) => {
   const target = e.target.closest('[data-detail]');

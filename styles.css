@@ -308,10 +308,11 @@ button {
 }
 
 .icon-set-control {
+  position: relative;
   flex: 0 0 auto;
 }
 
-.icon-set-control select {
+.icon-set-btn {
   width: 118px;
   height: 40px;
   padding: 0 10px;
@@ -324,11 +325,64 @@ button {
   background: var(--field);
   box-shadow: var(--inner-shadow);
   cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.icon-set-btn::after {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: 8px;
+  vertical-align: middle;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  opacity: 0.65;
+}
+
+.icon-set-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 150px;
+  padding: 5px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--card-strong), white 20%);
+  box-shadow: 0 14px 34px rgba(20, 42, 64, 0.16), var(--inner-shadow);
+  backdrop-filter: blur(16px) saturate(1.12);
+}
+
+.icon-set-menu button {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 9px;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 750;
+  text-align: left;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon-set-menu button:hover,
+.icon-set-menu button:focus-visible {
+  outline: none;
+  background: rgba(127, 127, 127, 0.14);
+}
+
+.icon-set-menu button.active {
+  background: var(--card-strong);
+  box-shadow: var(--inner-shadow);
 }
 
 .icon-btn:hover,
 .unit-toggle:hover,
-.icon-set-control select:hover {
+.icon-set-btn:hover {
   background: var(--field-hover);
   border-color: var(--card-border);
   transform: translateY(-1px);
@@ -336,7 +390,7 @@ button {
 
 .icon-btn:focus-visible,
 .unit-toggle:focus-visible,
-.icon-set-control select:focus-visible,
+.icon-set-btn:focus-visible,
 .refresh:focus-visible,
 .seg-btn:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent), transparent 62%);
@@ -1022,9 +1076,16 @@ button {
 
   .icon-btn,
   .unit-toggle,
+  .icon-set-btn,
   #search-input {
     height: 38px;
     min-height: 38px;
+  }
+
+  .icon-set-btn {
+    width: 82px;
+    padding: 0 7px;
+    font-size: 11px;
   }
 
   .unit-toggle {
