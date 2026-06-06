@@ -129,6 +129,24 @@
               <div class="temp" id="hero-temp"></div>
             </div>
           </div>
+          <div class="hero-extra">
+            <p class="nowcast" id="nowcast" hidden></p>
+            <div class="daylight" id="daylight" hidden>
+              <span class="daylight-end">
+                <svg class="daylight-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-sunrise"></use></svg>
+                <span id="daylight-rise"></span>
+              </span>
+              <span class="daylight-track">
+                <span class="daylight-fill" id="daylight-fill"></span>
+                <span class="daylight-dot" id="daylight-dot"></span>
+              </span>
+              <span class="daylight-end">
+                <span id="daylight-set"></span>
+                <svg class="daylight-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-sunset"></use></svg>
+              </span>
+              <span class="daylight-len" id="daylight-len"></span>
+            </div>
+          </div>
         </section>
       </section>
 
@@ -168,7 +186,6 @@
           <button id="day-back-btn" class="day-back-btn" type="button">Back to next 24 h</button>
         </div>
         <p class="forecast-note" id="hourly-summary"></p>
-        <p class="nowcast" id="nowcast" hidden></p>
         <div class="hourly-strip" id="hourly-strip"></div>
       </section>
 

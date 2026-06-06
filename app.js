@@ -3,7 +3,7 @@ import {
   rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
   airQualityUrl, parseAirQuality, aqiCategory, pollenSummary,
-  goldenHour, moonPhase,
+  goldenHour, moonPhase, daylightProgress, formatDuration,
   parseMinutely, nowcastText,
 } from './weather.js';
 
@@ -375,7 +375,30 @@ function renderHero(cur, daily, name) {
     `${name}: ${d.label}, ${Math.round(cur.temperature_2m)}° and feels like ${Math.round(cur.apparent_temperature)}°. ` +
     `High ${Math.round(daily.temperature_2m_max[0])}°, low ${Math.round(daily.temperature_2m_min[0])}°. ` +
     `Wind ${Math.round(cur.wind_speed_10m)} ${u.windLabel} ${degToCompass(cur.wind_direction_10m)}; humidity ${cur.relative_humidity_2m}%.`);
+  renderDaylight(cur, daily);
   show('hero');
+}
+
+// Sunrise→sunset progress bar in the hero footer: the fill and marker track the
+// current time within the daylight window.
+/**
+ * @param {CurrentData} cur
+ * @param {DailyData} daily
+ */
+function renderDaylight(cur, daily) {
+  const el = $('daylight');
+  const rise = daily.sunrise[0];
+  const set = daily.sunset[0];
+  if (!rise || !set) { el.hidden = true; return; }
+  const dl = daylightProgress(rise, set, cur.time);
+  const pct = `${(dl.fraction * 100).toFixed(1)}%`;
+  $('daylight-rise').textContent = formatClock(rise);
+  $('daylight-set').textContent = formatClock(set);
+  $('daylight-fill').style.width = pct;
+  $('daylight-dot').style.left = pct;
+  $('daylight-len').textContent = formatDuration(dl.dayLengthMin);
+  el.classList.toggle('is-night', !dl.isDaytime);
+  el.hidden = false;
 }
 
 const GRAPH_H = 84;

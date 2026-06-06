@@ -165,6 +165,14 @@
  */
 
 /**
+ * How far through the daylight period a moment sits.
+ * @typedef {object} DaylightProgress
+ * @property {number} fraction 0..1 from sunrise to sunset (clamped)
+ * @property {boolean} isDaytime whether now is between sunrise and sunset
+ * @property {number} dayLengthMin minutes of daylight
+ */
+
+/**
  * A single minutely_15 precipitation sample.
  * @typedef {object} MinutelySample
  * @property {string} time
@@ -696,6 +704,43 @@ export function moonPhase(date) {
   const illumination = (1 - Math.cos(2 * Math.PI * phase)) / 2;
   const idx = Math.round(phase * 8) % 8;
   return { phase, illumination, name: MOON_NAMES[idx], emoji: MOON_EMOJI[idx] };
+}
+
+// Position of `now` within today's daylight, for a sunrise→sunset progress bar.
+// fraction clamps to [0,1] so the marker stays on the track before dawn / after
+// dusk; isDaytime says whether the sun is actually up right now.
+/**
+ * @param {string} sunriseIso
+ * @param {string} sunsetIso
+ * @param {string} nowIso
+ * @returns {DaylightProgress}
+ */
+export function daylightProgress(sunriseIso, sunsetIso, nowIso) {
+  const rise = new Date(sunriseIso).getTime();
+  const set = new Date(sunsetIso).getTime();
+  const now = new Date(nowIso).getTime();
+  const span = set - rise;
+  if (!Number.isFinite(span) || span <= 0) {
+    return { fraction: 0, isDaytime: false, dayLengthMin: 0 };
+  }
+  const fraction = Math.min(1, Math.max(0, (now - rise) / span));
+  return {
+    fraction,
+    isDaytime: now >= rise && now <= set,
+    dayLengthMin: Math.round(span / 60000),
+  };
+}
+
+// "13h 52m" / "47m" from a minute count.
+/**
+ * @param {number} minutes
+ * @returns {string}
+ */
+export function formatDuration(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return '—';
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
 }
 
 // US AQI breakpoints (EPA): map an index value to its health category.

@@ -582,7 +582,9 @@ button {
   min-width: 0;
   height: 100%;
   display: grid;
-  gap: 8px;
+  /* main content fills/centers; the daylight footer pins to the bottom */
+  grid-template-rows: 1fr auto;
+  gap: 12px;
   min-height: 150px;
   padding: 12px;
 }
@@ -592,6 +594,84 @@ button {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
+}
+
+.hero-extra {
+  display: grid;
+  gap: 8px;
+}
+
+.hero-extra:not(:empty) {
+  border-top: 1px solid var(--card-border);
+  padding-top: 10px;
+}
+
+.hero-extra .nowcast {
+  margin: 0;
+}
+
+.daylight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.daylight-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.daylight-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.daylight-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgba(127, 159, 196, 0.35), rgba(127, 159, 196, 0.35));
+}
+
+.daylight-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffd35c, #ff9b3d);
+}
+
+.daylight-dot {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #ff9b3d;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transform: translate(-50%, -50%);
+}
+
+.daylight-len {
+  flex: none;
+  margin-left: 2px;
+  opacity: 0.85;
+}
+
+/* After sunset / before sunrise: mute the track so it doesn't imply the sun is up. */
+.daylight.is-night .daylight-fill {
+  background: linear-gradient(90deg, #6b7da6, #4a5a82);
+}
+
+.daylight.is-night .daylight-dot {
+  border-color: #6b7da6;
 }
 
 .hero-copy {

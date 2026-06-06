@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   airQualityUrl, parseAirQuality, aqiCategory,
   pollenCategory, pollenSummary, goldenHour, moonPhase,
+  daylightProgress, formatDuration,
   sliceDayHours, parseMinutely, nowcastText,
   sliceNext24, groupHours,
 } from '../weather.js';
@@ -310,4 +311,46 @@ test('moonPhase: outputs stay in range across the cycle', () => {
     assert.ok(m.illumination >= 0 && m.illumination <= 1);
     assert.ok(typeof m.emoji === 'string' && m.emoji.length > 0);
   }
+});
+
+test('daylightProgress tracks position within the daylight window', () => {
+  const rise = '2024-06-01T06:00';
+  const set = '2024-06-01T20:00'; // 14h day = 840 min
+
+  const noon = daylightProgress(rise, set, '2024-06-01T13:00');
+  assert.ok(Math.abs(noon.fraction - 0.5) < 1e-9); // halfway
+  assert.equal(noon.isDaytime, true);
+  assert.equal(noon.dayLengthMin, 840);
+
+  // before sunrise -> clamped to 0, not daytime
+  const dawn = daylightProgress(rise, set, '2024-06-01T04:00');
+  assert.equal(dawn.fraction, 0);
+  assert.equal(dawn.isDaytime, false);
+
+  // after sunset -> clamped to 1, not daytime
+  const night = daylightProgress(rise, set, '2024-06-01T22:00');
+  assert.equal(night.fraction, 1);
+  assert.equal(night.isDaytime, false);
+
+  // exactly at sunrise/sunset counts as daytime (inclusive)
+  assert.equal(daylightProgress(rise, set, rise).isDaytime, true);
+  assert.equal(daylightProgress(rise, set, set).isDaytime, true);
+});
+
+test('daylightProgress is safe when times are missing or inverted', () => {
+  const bad = daylightProgress('nope', 'nope', 'nope');
+  assert.equal(bad.fraction, 0);
+  assert.equal(bad.isDaytime, false);
+  assert.equal(bad.dayLengthMin, 0);
+  // set before rise -> non-positive span -> safe zero
+  const inv = daylightProgress('2024-06-01T20:00', '2024-06-01T06:00', '2024-06-01T13:00');
+  assert.equal(inv.dayLengthMin, 0);
+});
+
+test('formatDuration renders hours and minutes', () => {
+  assert.equal(formatDuration(832), '13h 52m');
+  assert.equal(formatDuration(60), '1h 0m');
+  assert.equal(formatDuration(47), '47m');
+  assert.equal(formatDuration(0), '—');
+  assert.equal(formatDuration(NaN), '—');
 });
