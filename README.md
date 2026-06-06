@@ -6,7 +6,8 @@ A clean, client-side weather forecast page. Data from Open-Meteo (no API key).
 - Current conditions, hourly forecast, and a multi-day outlook with condition-driven theming.
 - Interactive hourly graph — switch metrics (temp, precip, wind, humidity, UV), points on every hour (labelled every 3rd), feels-like ghost line, and day/night shading.
 - Tap a forecast day to load its hours into the graph.
-- Feels-like temperature, US AQI card, and a precipitation nowcast ("rain likely around…").
+- Feels-like temperature, US AQI + pollen card, and a precipitation nowcast ("rain likely around…").
+- Sun tiles: sunrise/sunset, golden-hour windows, and current moon phase.
 - RainViewer radar overlay (Leaflet) with a playable timeline.
 - Saved locations, search + geolocation, °F/°C toggle, multiple icon sets, and Auto/Light/Dark mode.
 - Installable PWA with an offline service worker (`sw.js`).

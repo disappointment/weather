@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   airQualityUrl, parseAirQuality, aqiCategory,
+  pollenCategory, pollenSummary, goldenHour, moonPhase,
   sliceDayHours, parseMinutely, nowcastText,
   sliceNext24, groupHours,
 } from '../weather.js';
@@ -21,18 +22,28 @@ test('airQualityUrl builds an air-quality endpoint with coords and pollutants', 
 
 test('parseAirQuality reads json.current with undefined-safe access', () => {
   const out = parseAirQuality({
-    current: { us_aqi: 42, pm2_5: 9.1, pm10: 15, ozone: 60, european_aqi: 20 },
+    current: {
+      us_aqi: 42, pm2_5: 9.1, pm10: 15, ozone: 60, european_aqi: 20,
+      grass_pollen: 12, birch_pollen: 0,
+    },
   });
-  assert.deepEqual(out, { usAqi: 42, pm25: 9.1, pm10: 15, ozone: 60, europeanAqi: 20 });
+  assert.equal(out.usAqi, 42);
+  assert.equal(out.pm25, 9.1);
+  assert.equal(out.pm10, 15);
+  assert.equal(out.ozone, 60);
+  assert.equal(out.europeanAqi, 20);
+  assert.equal(out.grassPollen, 12);
+  assert.equal(out.birchPollen, 0);
+  assert.equal(out.olivePollen, undefined);
   // missing current -> all undefined, no throw
-  assert.deepEqual(parseAirQuality({}), {
-    usAqi: undefined, pm25: undefined, pm10: undefined,
-    ozone: undefined, europeanAqi: undefined,
-  });
-  assert.deepEqual(parseAirQuality(null), {
-    usAqi: undefined, pm25: undefined, pm10: undefined,
-    ozone: undefined, europeanAqi: undefined,
-  });
+  for (const json of [{}, null]) {
+    const o = parseAirQuality(json);
+    for (const k of ['usAqi', 'pm25', 'pm10', 'ozone', 'europeanAqi',
+      'grassPollen', 'birchPollen', 'alderPollen', 'ragweedPollen',
+      'mugwortPollen', 'olivePollen']) {
+      assert.equal(o[k], undefined);
+    }
+  }
 });
 
 test('aqiCategory maps US AQI breakpoints', () => {
@@ -231,4 +242,72 @@ test('nowcastText: rain likely later names the first wet sample', () => {
     hour: 'numeric', minute: '2-digit',
   });
   assert.equal(nowcastText(samples), `Precipitation likely around ${expected}.`);
+});
+
+test('pollenCategory bands grains/m³', () => {
+  assert.equal(pollenCategory(undefined), 'Unknown');
+  assert.equal(pollenCategory(NaN), 'Unknown');
+  assert.equal(pollenCategory(0), 'None');
+  assert.equal(pollenCategory(0.5), 'None');
+  assert.equal(pollenCategory(1), 'Low');
+  assert.equal(pollenCategory(19), 'Low');
+  assert.equal(pollenCategory(20), 'Moderate');
+  assert.equal(pollenCategory(49), 'Moderate');
+  assert.equal(pollenCategory(50), 'High');
+  assert.equal(pollenCategory(99), 'High');
+  assert.equal(pollenCategory(100), 'Very high');
+});
+
+test('pollenSummary lists present types, null when absent', () => {
+  assert.equal(pollenSummary({}), null);
+  assert.equal(pollenSummary({ usAqi: 30 }), null);
+  assert.equal(
+    pollenSummary({ grassPollen: 12, birchPollen: 60 }),
+    'grass low, birch high',
+  );
+  // zero counts as present (a real reading of "none"), undefined is skipped
+  assert.equal(
+    pollenSummary({ grassPollen: 0, olivePollen: undefined }),
+    'grass none',
+  );
+});
+
+test('goldenHour brackets sunrise and sunset by an hour', () => {
+  const g = goldenHour('2024-06-01T05:30', '2024-06-01T21:00');
+  assert.equal(g.morning.start, '2024-06-01T05:30');
+  assert.equal(g.morning.end, '2024-06-01T06:30');
+  assert.equal(g.evening.start, '2024-06-01T20:00');
+  assert.equal(g.evening.end, '2024-06-01T21:00');
+});
+
+test('goldenHour handles hour/day rollovers', () => {
+  // sunrise late in an hour: +60 rolls the hour cleanly
+  const g = goldenHour('2024-12-21T07:45', '2024-12-21T16:20');
+  assert.equal(g.morning.end, '2024-12-21T08:45');
+  assert.equal(g.evening.start, '2024-12-21T15:20');
+});
+
+test('moonPhase: new and full from the synodic cycle', () => {
+  const ref = new Date(Date.UTC(2000, 0, 6, 18, 14)); // reference new moon
+  const newMoon = moonPhase(ref);
+  assert.equal(newMoon.name, 'New moon');
+  assert.ok(newMoon.illumination < 0.01);
+
+  const full = moonPhase(new Date(ref.getTime() + 29.530588853 * 86400000 / 2));
+  assert.equal(full.name, 'Full moon');
+  assert.ok(full.illumination > 0.99);
+
+  const firstQ = moonPhase(new Date(ref.getTime() + 29.530588853 * 86400000 / 4));
+  assert.equal(firstQ.name, 'First quarter');
+  assert.ok(Math.abs(firstQ.illumination - 0.5) < 0.01);
+});
+
+test('moonPhase: outputs stay in range across the cycle', () => {
+  const ref = Date.UTC(2000, 0, 6, 18, 14);
+  for (let d = 0; d < 30; d++) {
+    const m = moonPhase(new Date(ref + d * 86400000));
+    assert.ok(m.phase >= 0 && m.phase < 1);
+    assert.ok(m.illumination >= 0 && m.illumination <= 1);
+    assert.ok(typeof m.emoji === 'string' && m.emoji.length > 0);
+  }
 });

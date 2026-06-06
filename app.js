@@ -2,7 +2,8 @@ import {
   describeWeather, sliceNext24, sliceDayHours, groupHours, degToCompass, unitConfig,
   rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
-  airQualityUrl, parseAirQuality, aqiCategory,
+  airQualityUrl, parseAirQuality, aqiCategory, pollenSummary,
+  goldenHour, moonPhase,
   parseMinutely, nowcastText,
 } from './weather.js';
 
@@ -829,6 +830,19 @@ function renderTiles(cur, daily, firstHour) {
     `UV index is ${formatUv(firstHour ? firstHour.uv : daily.uv_index_max[0])}; stronger sun exposure needs more protection.`);
   setDetail($('t-sunrise').closest('.tile'), `Sunrise today is ${formatClock(daily.sunrise[0])}.`);
   setDetail($('t-sunset').closest('.tile'), `Sunset today is ${formatClock(daily.sunset[0])}.`);
+
+  const golden = goldenHour(daily.sunrise[0], daily.sunset[0]);
+  $('t-golden').textContent =
+    `${formatClock(golden.evening.start)}–${formatClock(golden.evening.end)}`;
+  setDetail($('t-golden').closest('.tile'),
+    `Golden hour — soft, warm light for photos. Morning ` +
+    `${formatClock(golden.morning.start)}–${formatClock(golden.morning.end)}; ` +
+    `evening ${formatClock(golden.evening.start)}–${formatClock(golden.evening.end)}.`);
+
+  const moon = moonPhase(new Date());
+  $('t-moon').textContent = `${moon.emoji} ${moon.name}`;
+  setDetail($('t-moon').closest('.tile'),
+    `${moon.name}, about ${Math.round(moon.illumination * 100)}% illuminated.`);
   setDetail($('t-pressure').closest('.tile'),
     `Surface pressure is ${Math.round(cur.surface_pressure)} hPa; falling pressure often points to unsettled weather.`);
   setDetail($('t-visibility').closest('.tile'),
@@ -849,9 +863,11 @@ function renderAirQuality(aq) {
    * @param {string} suffix
    */
   const fmt = (v, suffix) => (Number.isFinite(v) ? `${Math.round(/** @type {number} */ (v))}${suffix}` : '—');
+  const pollen = pollenSummary(aq);
   setDetail(tile, hasAqi
     ? `US AQI ${Math.round(/** @type {number} */ (aq.usAqi))} (${aqiCategory(aq.usAqi)}). ` +
-      `PM2.5 ${fmt(aq.pm25, ' µg/m³')}; PM10 ${fmt(aq.pm10, ' µg/m³')}; ozone ${fmt(aq.ozone, ' µg/m³')}.`
+      `PM2.5 ${fmt(aq.pm25, ' µg/m³')}; PM10 ${fmt(aq.pm10, ' µg/m³')}; ozone ${fmt(aq.ozone, ' µg/m³')}.` +
+      (pollen ? ` Pollen — ${pollen}.` : '')
     : 'Air quality data is unavailable.');
   tile.hidden = false;
 }

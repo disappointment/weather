@@ -125,13 +125,43 @@
 
 /**
  * Parsed air-quality readings. Any field may be undefined when the source
- * provides no value.
+ * provides no value. Pollen series are only modelled in Europe, so they are
+ * commonly absent elsewhere.
  * @typedef {object} AirQuality
  * @property {number} [usAqi]
  * @property {number} [pm25]
  * @property {number} [pm10]
  * @property {number} [ozone]
  * @property {number} [europeanAqi]
+ * @property {number} [grassPollen]
+ * @property {number} [birchPollen]
+ * @property {number} [alderPollen]
+ * @property {number} [ragweedPollen]
+ * @property {number} [mugwortPollen]
+ * @property {number} [olivePollen]
+ */
+
+/**
+ * One golden-hour window (soft, warm light) as local ISO strings.
+ * @typedef {object} GoldenWindow
+ * @property {string} start
+ * @property {string} end
+ */
+
+/**
+ * The two daily golden-hour windows around sunrise and sunset.
+ * @typedef {object} GoldenHour
+ * @property {GoldenWindow} morning
+ * @property {GoldenWindow} evening
+ */
+
+/**
+ * A moon-phase reading for a moment in time.
+ * @typedef {object} MoonPhase
+ * @property {number} phase
+ * @property {number} illumination
+ * @property {string} name
+ * @property {string} emoji
  */
 
 /**
@@ -541,7 +571,9 @@ export function airQualityUrl(lat, lon) {
   const p = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lon),
-    current: 'us_aqi,pm2_5,pm10,ozone,european_aqi',
+    current: 'us_aqi,pm2_5,pm10,ozone,european_aqi,' +
+      'grass_pollen,birch_pollen,alder_pollen,ragweed_pollen,' +
+      'mugwort_pollen,olive_pollen',
     timezone: 'auto',
   });
   return `https://air-quality-api.open-meteo.com/v1/air-quality?${p.toString()}`;
@@ -560,7 +592,110 @@ export function parseAirQuality(json) {
     pm10: c.pm10,
     ozone: c.ozone,
     europeanAqi: c.european_aqi,
+    grassPollen: c.grass_pollen,
+    birchPollen: c.birch_pollen,
+    alderPollen: c.alder_pollen,
+    ragweedPollen: c.ragweed_pollen,
+    mugwortPollen: c.mugwort_pollen,
+    olivePollen: c.olive_pollen,
   };
+}
+
+// Pollen types we surface, paired with the AirQuality key holding their count.
+/** @type {[string, keyof AirQuality][]} */
+const POLLEN_TYPES = [
+  ['Grass', 'grassPollen'],
+  ['Birch', 'birchPollen'],
+  ['Alder', 'alderPollen'],
+  ['Ragweed', 'ragweedPollen'],
+  ['Mugwort', 'mugwortPollen'],
+  ['Olive', 'olivePollen'],
+];
+
+// Generic grains/m³ scale. Per-species thresholds differ, but this gives a
+// useful at-a-glance band that holds across types.
+/**
+ * Categorize a pollen concentration (grains/m³).
+ * @param {number|undefined} grains
+ * @returns {string}
+ */
+export function pollenCategory(grains) {
+  if (typeof grains !== 'number' || !Number.isFinite(grains)) return 'Unknown';
+  if (grains < 1) return 'None';
+  if (grains < 20) return 'Low';
+  if (grains < 50) return 'Moderate';
+  if (grains < 100) return 'High';
+  return 'Very high';
+}
+
+// One-line pollen summary, or null when no pollen series are present (the usual
+// case outside Europe). Lists each available type with its band.
+/**
+ * @param {AirQuality} aq
+ * @returns {string|null}
+ */
+export function pollenSummary(aq) {
+  const present = POLLEN_TYPES
+    .map(([label, key]) => /** @type {[string, number]} */ ([label, aq[key]]))
+    .filter(([, v]) => Number.isFinite(v));
+  if (!present.length) return null;
+  return present
+    .map(([label, v]) => `${label.toLowerCase()} ${pollenCategory(v).toLowerCase()}`)
+    .join(', ');
+}
+
+// Golden hour ≈ the hour the sun sits low and warm: just after sunrise and just
+// before sunset. A fixed 60-min window approximates the sun-elevation band
+// (~-4°..+6°) closely enough without a solar-position model.
+/**
+ * @param {string} sunriseIso local ISO timestamp
+ * @param {string} sunsetIso local ISO timestamp
+ * @returns {GoldenHour}
+ */
+export function goldenHour(sunriseIso, sunsetIso) {
+  return {
+    morning: { start: sunriseIso.slice(0, 16), end: shiftIso(sunriseIso, 60) },
+    evening: { start: shiftIso(sunsetIso, -60), end: sunsetIso.slice(0, 16) },
+  };
+}
+
+// Shift a local ISO time by some minutes, returning a local 'YYYY-MM-DDTHH:MM'
+// string. Parsing and formatting both in local time keeps the offset stable
+// regardless of the runtime's timezone.
+/**
+ * @param {string} iso
+ * @param {number} minutes
+ * @returns {string}
+ */
+function shiftIso(iso, minutes) {
+  const d = new Date(iso);
+  d.setMinutes(d.getMinutes() + minutes);
+  /** @param {number} n */
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+const MOON_NAMES = [
+  'New moon', 'Waxing crescent', 'First quarter', 'Waxing gibbous',
+  'Full moon', 'Waning gibbous', 'Last quarter', 'Waning crescent',
+];
+const MOON_EMOJI = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
+const SYNODIC_MS = 29.530588853 * 86400000; // mean lunar month
+const NEW_MOON_REF = Date.UTC(2000, 0, 6, 18, 14); // a known new moon
+
+// Moon phase from the synodic cycle since a reference new moon. phase is a
+// 0..1 fraction (0 = new, 0.5 = full); illumination is the lit fraction 0..1.
+/**
+ * @param {Date} date
+ * @returns {MoonPhase}
+ */
+export function moonPhase(date) {
+  const elapsed = date.getTime() - NEW_MOON_REF;
+  const phase = (((elapsed % SYNODIC_MS) + SYNODIC_MS) % SYNODIC_MS) / SYNODIC_MS;
+  const illumination = (1 - Math.cos(2 * Math.PI * phase)) / 2;
+  const idx = Math.round(phase * 8) % 8;
+  return { phase, illumination, name: MOON_NAMES[idx], emoji: MOON_EMOJI[idx] };
 }
 
 // US AQI breakpoints (EPA): map an index value to its health category.
