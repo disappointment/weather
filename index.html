@@ -9,6 +9,13 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="favicon.svg">
   <link rel="manifest" href="manifest.webmanifest">
+  <!-- Leaflet 1.9.4 from CDN (pinned + SRI) — used by radar.js via the global L. -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin="" defer></script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -43,6 +50,7 @@
       <symbol id="icon-pressure" viewBox="0 0 24 24"><path fill="none" stroke="#8fb2cc" stroke-width="2" stroke-linecap="round" d="M4.5 17a8 8 0 1115 0"/><line x1="12" y1="14" x2="15.6" y2="9.6" stroke="#ff5d5d" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="14" r="1.6" fill="#cfd8e7"/></symbol>
       <symbol id="icon-visibility" viewBox="0 0 24 24"><path fill="none" stroke="#8fb2cc" stroke-width="2" stroke-linejoin="round" d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3" fill="#47b8ff"/><circle cx="12" cy="12" r="1.2" fill="#0b1b2b"/></symbol>
       <symbol id="icon-refresh" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 10-1.5 6.4"/><path fill="currentColor" d="M20 6.5V11h-4.5z"/></symbol>
+      <symbol id="icon-aqi" viewBox="0 0 24 24"><path fill="#6fcf7a" d="M19 4c-6 0-11 3.2-12.6 8.2A6.4 6.4 0 005.8 18C8 13.4 11.5 10.6 16 9.4 12.7 11 9.8 13.6 8 17.6A6 6 0 0019 13c1-3 0-6 0-9z"/><path fill="#3ea84e" d="M16 9.4C11.5 10.6 8 13.4 5.8 18l1.5.9C9.2 14.9 12.1 12 16 9.4z" opacity=".75"/></symbol>
     </defs>
   </svg>
 
@@ -79,8 +87,20 @@
           <button type="button" role="option" data-icon-set="mono">Mono</button>
         </div>
       </div>
+      <button id="scheme-btn" class="icon-btn scheme-btn" type="button"
+              aria-label="Theme: Auto" title="Theme: Auto">
+        <span class="scheme-glyph" aria-hidden="true">◐</span>
+      </button>
       <button id="unit-btn" class="unit-toggle" aria-label="Toggle units">°F</button>
+      <button id="pin-btn" class="icon-btn pin-btn" type="button"
+              aria-label="Save this location" aria-pressed="false" title="Save this location">
+        <svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2.6l2.9 5.9 6.5.95-4.7 4.58 1.1 6.47L12 17.5l-5.8 3.05 1.1-6.47-4.7-4.58 6.5-.95z"/>
+        </svg>
+      </button>
     </header>
+
+    <div id="saved-bar" class="saved-bar" role="list" aria-label="Saved locations" hidden></div>
 
     <section id="status" class="status" role="status" aria-live="polite"
              aria-atomic="true" hidden></section>
@@ -118,6 +138,7 @@
         <div class="tile"><div class="tile-head"><svg class="tile-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#icon-sunrise"></use></svg><span class="tile-label">Sunrise</span></div><span class="tile-value" id="t-sunrise"></span></div>
         <div class="tile"><div class="tile-head"><svg class="tile-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#icon-sunset"></use></svg><span class="tile-label">Sunset</span></div><span class="tile-value" id="t-sunset"></span></div>
         <div class="tile"><div class="tile-head"><svg class="tile-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#icon-visibility"></use></svg><span class="tile-label">Visibility</span></div><span class="tile-value" id="t-visibility"></span></div>
+        <div class="tile" hidden><div class="tile-head"><svg class="tile-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#icon-aqi"></use></svg><span class="tile-label">Air Quality</span></div><span class="tile-value" id="t-aqi"></span></div>
       </section>
     </section>
 
@@ -129,14 +150,21 @@
     <section class="forecast-grid">
       <section id="hourly-card" class="card hourly" hidden>
         <div class="card-head">
-          <h2 class="card-title">3-Hourly</h2>
+          <h2 class="card-title" id="hourly-title">3-Hourly</h2>
           <div class="seg" id="metric-toggle" role="group" aria-label="Graph metric">
             <button class="seg-btn" type="button" data-metric="temp" aria-pressed="true">Temp</button>
             <button class="seg-btn" type="button" data-metric="precip" aria-pressed="false">Precip</button>
             <button class="seg-btn" type="button" data-metric="wind" aria-pressed="false">Wind</button>
+            <button class="seg-btn" type="button" data-metric="humidity" aria-pressed="false">Humidity</button>
+            <button class="seg-btn" type="button" data-metric="uv" aria-pressed="false">UV</button>
           </div>
         </div>
+        <div id="day-note" class="day-note" hidden>
+          <span id="day-note-label" class="day-note-label"></span>
+          <button id="day-back-btn" class="day-back-btn" type="button">Back to next 24 h</button>
+        </div>
         <p class="forecast-note" id="hourly-summary"></p>
+        <p class="nowcast" id="nowcast" hidden></p>
         <div class="hourly-strip" id="hourly-strip"></div>
       </section>
 
@@ -145,6 +173,21 @@
         <p class="forecast-note" id="daily-summary"></p>
         <div class="daily-list" id="daily-list"></div>
       </section>
+    </section>
+
+    <section id="radar-card" class="card radar" hidden>
+      <div class="card-head">
+        <h2 class="card-title">Radar</h2>
+        <div class="radar-controls" id="radar-controls">
+          <button id="radar-play" class="radar-play" type="button"
+                  aria-label="Play radar animation" title="Play radar animation">▶</button>
+          <input id="radar-scrub" class="radar-scrub" type="range"
+                 min="0" max="0" value="0" step="1"
+                 aria-label="Radar frame" disabled>
+          <span id="radar-time" class="radar-time" aria-live="polite"></span>
+        </div>
+      </div>
+      <div id="radar-map"></div>
     </section>
   </main>
 

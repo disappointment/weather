@@ -1,12 +1,13 @@
 /* Offline app shell + resilient data caching.
    Bump CACHE_VERSION whenever the precached assets change. */
-const CACHE_VERSION = 'weather-v3';
+const CACHE_VERSION = 'weather-v4';
 const SHELL = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './weather.js',
+  './radar.js',
   './favicon.svg',
   './manifest.webmanifest',
 ];

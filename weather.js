@@ -171,6 +171,10 @@ export function sliceNext24(hourly, currentIso) {
       humidity: hourly.relative_humidity_2m?.[i],
       uv: hourly.uv_index[i],
       visibility: hourly.visibility[i],
+      feels: hourly.apparent_temperature?.[i],
+      dew: hourly.dew_point_2m?.[i],
+      gust: hourly.wind_gusts_10m?.[i],
+      cloud: hourly.cloud_cover?.[i],
     });
   }
   return out;
@@ -188,6 +192,7 @@ export function groupHours(hours, size = 3) {
     const precs = chunk.map((h) => h.precip).filter(Number.isFinite);
     const winds = chunk.map((h) => h.wind).filter(Number.isFinite);
     const hums = chunk.map((h) => h.humidity).filter(Number.isFinite);
+    const feelses = chunk.map((h) => h.feels).filter(Number.isFinite);
     const codes = chunk.map((h) => h.code).filter(Number.isFinite);
     blocks.push({
       time: chunk[0].time,
@@ -196,6 +201,7 @@ export function groupHours(hours, size = 3) {
       precip: precs.length ? Math.max(...precs) : undefined,
       wind: winds.length ? Math.max(...winds) : undefined,
       humidity: hums.length ? avg(hums) : undefined,
+      feels: feelses.length ? avg(feelses) : undefined,
       code: codes.length ? Math.max(...codes) : chunk[0].code,
     });
   }
@@ -211,7 +217,8 @@ const CURRENT = [
 const HOURLY = [
   'temperature_2m', 'weather_code', 'precipitation_probability',
   'is_day', 'uv_index', 'visibility', 'wind_speed_10m',
-  'relative_humidity_2m',
+  'relative_humidity_2m', 'apparent_temperature', 'dew_point_2m',
+  'wind_gusts_10m', 'cloud_cover',
 ].join(',');
 
 const DAILY = [
@@ -227,6 +234,8 @@ export function forecastUrl(lat, lon, unit) {
     current: CURRENT,
     hourly: HOURLY,
     daily: DAILY,
+    minutely_15: 'precipitation',
+    forecast_minutely_15: '48', // 48 quarter-hours = next 12h of nowcast
     temperature_unit: u.temperatureUnit,
     wind_speed_unit: u.windSpeedUnit,
     precipitation_unit: u.precipitationUnit,
@@ -275,4 +284,100 @@ export function parsePlaces(json) {
     lat: r.latitude,
     lon: r.longitude,
   }));
+}
+
+// Open-Meteo air-quality API lives on a separate host from the forecast API.
+export function airQualityUrl(lat, lon) {
+  const p = new URLSearchParams({
+    latitude: lat,
+    longitude: lon,
+    current: 'us_aqi,pm2_5,pm10,ozone,european_aqi',
+    timezone: 'auto',
+  });
+  return `https://air-quality-api.open-meteo.com/v1/air-quality?${p.toString()}`;
+}
+
+export function parseAirQuality(json) {
+  const c = (json && json.current) || {};
+  return {
+    usAqi: c.us_aqi,
+    pm25: c.pm2_5,
+    pm10: c.pm10,
+    ozone: c.ozone,
+    europeanAqi: c.european_aqi,
+  };
+}
+
+// US AQI breakpoints (EPA): map an index value to its health category.
+export function aqiCategory(usAqi) {
+  if (!Number.isFinite(usAqi)) return 'Unknown';
+  if (usAqi <= 50) return 'Good';
+  if (usAqi <= 100) return 'Moderate';
+  if (usAqi <= 150) return 'Unhealthy for sensitive';
+  if (usAqi <= 200) return 'Unhealthy';
+  if (usAqi <= 300) return 'Very unhealthy';
+  return 'Hazardous';
+}
+
+// Like sliceNext24 but pulls every hour belonging to one calendar day (by ISO
+// date prefix), so the graph can show a specific future/past day in full.
+export function sliceDayHours(hourly, dateIso) {
+  const out = [];
+  for (let i = 0; i < hourly.time.length; i++) {
+    if (!hourly.time[i].startsWith(dateIso)) continue;
+    out.push({
+      time: hourly.time[i],
+      temp: hourly.temperature_2m[i],
+      code: hourly.weather_code[i],
+      isDay: hourly.is_day[i],
+      precip: hourly.precipitation_probability[i],
+      wind: hourly.wind_speed_10m?.[i],
+      humidity: hourly.relative_humidity_2m?.[i],
+      uv: hourly.uv_index[i],
+      visibility: hourly.visibility[i],
+      feels: hourly.apparent_temperature?.[i],
+      dew: hourly.dew_point_2m?.[i],
+      gust: hourly.wind_gusts_10m?.[i],
+      cloud: hourly.cloud_cover?.[i],
+    });
+  }
+  return out;
+}
+
+// Minutely_15 precipitation nowcast: keep samples at/after the current time,
+// capped to the next 12h (48 quarter-hours).
+export function parseMinutely(data) {
+  const m = (data && data.minutely_15) || {};
+  const times = m.time || [];
+  const precs = m.precipitation || [];
+  const now = data && data.current ? data.current.time : undefined;
+  const out = [];
+  for (let i = 0; i < times.length; i++) {
+    if (now && times[i] < now) continue;
+    out.push({ time: times[i], precip: precs[i] });
+    if (out.length >= 48) break;
+  }
+  return out;
+}
+
+// Turn nowcast samples into a one-line human summary. Pure: no formatting libs.
+export function nowcastText(samples) {
+  const list = samples || [];
+  const finite = list.filter((s) => Number.isFinite(s.precip));
+  if (!finite.length || finite.every((s) => Math.abs(s.precip) < 0.001)) {
+    return 'No precipitation expected in the next 12 h.';
+  }
+  const now = finite[0];
+  if (Number.isFinite(now.precip) && now.precip > 0) {
+    const x = Math.round(now.precip * 10) / 10;
+    return `Precipitation now, ~${x}mm/h.`;
+  }
+  const next = finite.find((s) => s.precip > 0.2);
+  if (next) {
+    const when = new Date(next.time).toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit',
+    });
+    return `Precipitation likely around ${when}.`;
+  }
+  return 'No precipitation expected in the next 12 h.';
 }

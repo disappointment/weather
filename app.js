@@ -1,8 +1,11 @@
 import {
-  describeWeather, sliceNext24, groupHours, degToCompass, unitConfig,
+  describeWeather, sliceNext24, sliceDayHours, groupHours, degToCompass, unitConfig,
   rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
+  airQualityUrl, parseAirQuality, aqiCategory,
+  parseMinutely, nowcastText,
 } from './weather.js';
+import { updateRadar } from './radar.js';
 
 const $ = (id) => document.getElementById(id);
 const LS_LOC = 'weather.location';
@@ -10,9 +13,13 @@ const LS_UNIT = 'weather.unit';
 const LS_DATA = 'weather.lastData';
 const LS_METRIC = 'weather.metric';
 const LS_ICON_SET = 'weather.iconSet';
+const LS_SAVED = 'weather.saved';
+const LS_SCHEME = 'weather.scheme';
 
 let unit = localStorage.getItem(LS_UNIT) || 'fahrenheit';
 let iconSet = localStorage.getItem(LS_ICON_SET) || 'illustrated';
+const SCHEMES = ['auto', 'light', 'dark'];
+let scheme = SCHEMES.includes(localStorage.getItem(LS_SCHEME)) ? localStorage.getItem(LS_SCHEME) : 'auto';
 let location_ = loadJSON(LS_LOC); // { name, lat, lon } | null
 let lastData = null;
 let lastUpdatedAt = null;
@@ -21,12 +28,18 @@ let lastHourlyRaw = [];           // raw hourly samples, kept for the graph curv
 let hourlyMetric = localStorage.getItem(LS_METRIC) || 'temp';
 let refreshTimer = null;
 let forecastController = null; // aborts in-flight forecast fetches
+let airController = null;       // aborts in-flight air-quality fetches
 let searchController = null;    // aborts in-flight search fetches
 let hourlyRenderId = 0;
 
 // Search/combobox state
 let currentPlaces = [];
 let activeIndex = -1;
+
+// Saved locations (chips) + tap-a-day state
+let saved = loadJSON(LS_SAVED) || []; // [{ name, lat, lon }]
+let selectedDayIso = null;            // ISO date of the day shown in the hourly graph, or null for next-24h
+let defaultDayHours = [];             // the original next-24h raw hours, for "Back"
 
 function loadJSON(key) {
   try { return JSON.parse(localStorage.getItem(key)); }
@@ -59,6 +72,45 @@ function showStatus(msg, isError = false) {
 function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
 }
+
+// ---- Color scheme (light/dark/auto) ----
+// data-scheme is independent of data-theme (the weather condition): dark mode
+// layers on top of whatever condition theme is active.
+const SCHEME_LABELS = { auto: 'Auto', light: 'Light', dark: 'Dark' };
+const SCHEME_GLYPHS = { auto: '◐', light: '☀', dark: '☾' };
+const darkMql = window.matchMedia('(prefers-color-scheme: dark)');
+
+// Resolve auto against the OS preference; dark/light are explicit.
+function isDarkScheme() {
+  return scheme === 'dark' || (scheme === 'auto' && darkMql.matches);
+}
+
+function applyScheme() {
+  const root = document.documentElement;
+  if (isDarkScheme()) root.setAttribute('data-scheme', 'dark');
+  else root.setAttribute('data-scheme', 'light');
+}
+
+function setSchemeControl() {
+  const btn = $('scheme-btn');
+  if (!btn) return;
+  btn.querySelector('.scheme-glyph').textContent = SCHEME_GLYPHS[scheme];
+  const label = `Theme: ${SCHEME_LABELS[scheme]}`;
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+}
+
+function cycleScheme() {
+  scheme = SCHEMES[(SCHEMES.indexOf(scheme) + 1) % SCHEMES.length];
+  localStorage.setItem(LS_SCHEME, scheme);
+  setSchemeControl();
+  applyScheme();
+}
+
+// React to OS dark-mode changes, but only when we're following it (auto).
+darkMql.addEventListener('change', () => {
+  if (scheme === 'auto') applyScheme();
+});
 
 function iconHref(name) { return `#icon-${name}`; }
 
@@ -216,6 +268,20 @@ const METRICS = {
     axis: (v) => `${Math.round(v)} ${unitConfig(unit).windLabel}`,
     domain: () => ({ min: 0 }), // baseline at calm
   },
+  humidity: {
+    label: 'Humidity',
+    value: (h) => h.humidity,
+    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}%` : '—'),
+    axis: (v) => `${Math.round(v)}%`,
+    domain: () => ({ min: 0, max: 100 }), // relative humidity is absolute 0–100
+  },
+  uv: {
+    label: 'UV',
+    value: (h) => h.uv,
+    cell: (v) => (Number.isFinite(v) ? String(Math.round(v)) : '—'),
+    axis: (v) => String(Math.round(v)),
+    domain: () => ({ min: 0 }), // baseline at no exposure
+  },
 };
 
 function maxBy(items, getValue) {
@@ -355,12 +421,48 @@ function metricGraphSvg(hours, metric, width, xOf, labelEvery = 3) {
   }
 
   const drawable = GRAPH_H - GRAPH_PAD * 2;
-  const points = valid.map((p) => {
-    const clamped = Math.max(min, Math.min(max, p.value));
-    const y = GRAPH_PAD + ((max - clamped) / (max - min)) * drawable;
-    return { x: p.x, y, value: p.value, index: p.index };
-  });
+  const yOf = (value) => {
+    const clamped = Math.max(min, Math.min(max, value));
+    return GRAPH_PAD + ((max - clamped) / (max - min)) * drawable;
+  };
+  const points = valid.map((p) => ({ x: p.x, y: yOf(p.value), value: p.value, index: p.index }));
   const line = pathFromPoints(points);
+
+  // Night shading: shade contiguous spans where the raw hour's isDay is falsy,
+  // behind the area. Half-step out on each side so a span hugs its hour cells.
+  const nightRects = [];
+  let runStart = -1;
+  const flushRun = (end) => {
+    if (runStart < 0) return;
+    const x1 = Math.max(0, Math.min(width, xOf(runStart - 0.5)));
+    const x2 = Math.max(0, Math.min(width, xOf(end + 0.5)));
+    if (x2 > x1) {
+      nightRects.push(`<rect class="graph-night" x="${x1.toFixed(1)}" y="0" width="${(x2 - x1).toFixed(1)}" height="${GRAPH_H}"/>`);
+    }
+    runStart = -1;
+  };
+  hours.forEach((h, i) => {
+    if (!Number(h.isDay)) {
+      if (runStart < 0) runStart = i;
+    } else {
+      flushRun(i - 1);
+    }
+  });
+  flushRun(hours.length - 1);
+  const night = nightRects.join('');
+
+  // Feels-like ghost line (temp view only): a second faint curve through each
+  // raw hour's apparent temperature, mapped with the same y-scale as temp.
+  let ghost = '';
+  if (metric === 'temp') {
+    const ghostPoints = hours
+      .map((h, i) => ({ value: Number(h.feels), x: xOf(i) }))
+      .filter((p) => Number.isFinite(p.value) && Number.isFinite(p.x))
+      .map((p) => ({ x: p.x, y: yOf(p.value) }));
+    if (ghostPoints.length >= 2) {
+      ghost = `<path class="graph-line-ghost" d="${pathFromPoints(ghostPoints)}"/>`;
+    }
+  }
   const first = points[0];
   const last = points[points.length - 1];
   const topY = GRAPH_PAD;
@@ -380,6 +482,7 @@ function metricGraphSvg(hours, metric, width, xOf, labelEvery = 3) {
   return `
     <svg class="hourly-graph" width="${width}" height="${GRAPH_H}"
          viewBox="0 0 ${width} ${GRAPH_H}" aria-hidden="true">
+      <g class="graph-nights">${night}</g>
       <g class="graph-axis">
         <line x1="0" y1="${topY}" x2="${width}" y2="${topY}"/>
         <line x1="0" y1="${bottomY}" x2="${width}" y2="${bottomY}"/>
@@ -387,6 +490,7 @@ function metricGraphSvg(hours, metric, width, xOf, labelEvery = 3) {
         <text x="${labelX}" y="${bottomY + 3}" text-anchor="start">${bottomLabel}</text>
       </g>
       <path class="graph-area" d="${area}"/>
+      ${ghost}
       <path class="graph-line" d="${line}"/>
       <g class="graph-values">${valueLabels}</g>
       <g class="graph-dots">${dots}</g>
@@ -483,8 +587,16 @@ function renderDaily(daily, hourly) {
     const bar = rangeBar(daily.temperature_2m_min[i],
                          daily.temperature_2m_max[i], weekMin, weekMax);
     const precip = daily.precipitation_probability_max[i];
-    const row = document.createElement('div');
+    // Each day is a button so it's keyboard-operable; clicking loads that day
+    // into the hourly graph. aria-pressed reflects which day is shown.
+    const row = document.createElement('button');
+    row.type = 'button';
     row.className = 'day-row';
+    row.dataset.dayIso = iso;
+    // Day 0 (today) selected == the default next-24h view.
+    const isSelected = (i === 0 && !selectedDayIso) || selectedDayIso === iso;
+    row.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+    row.classList.toggle('active', isSelected);
     row.innerHTML = `
       <span class="d-name">${i === 0 ? 'Today' : formatWeekday(iso)}</span>
       ${weatherIconHtml(d.icon)}
@@ -496,6 +608,7 @@ function renderDaily(daily, hourly) {
         <span class="range-hi">${Math.round(daily.temperature_2m_max[i])}°</span>
       </span>`;
     setDetail(row, dailyDetail(daily, i, hourly));
+    row.addEventListener('click', () => selectDay(iso, i));
     frag.appendChild(row);
   });
   $('daily-list').replaceChildren(frag);
@@ -526,6 +639,32 @@ function renderTiles(cur, daily, firstHour) {
   setDetail($('t-visibility').closest('.tile'),
     firstHour ? `Visibility is about ${u.distanceFrom(firstHour.visibility)} ${u.distanceLabel}.` : 'Visibility data is unavailable.');
   show('tiles-card');
+}
+
+// Air quality lives in its own tile; data arrives from a separate API call, so
+// it renders independently of renderTiles (which has only forecast data).
+function renderAirQuality(aq) {
+  const tile = $('t-aqi')?.closest('.tile');
+  if (!tile) return;
+  const hasAqi = Number.isFinite(aq.usAqi);
+  $('t-aqi').textContent = hasAqi ? `${Math.round(aq.usAqi)} (${aqiCategory(aq.usAqi)})` : '—';
+  const fmt = (v, suffix) => (Number.isFinite(v) ? `${Math.round(v)}${suffix}` : '—');
+  setDetail(tile, hasAqi
+    ? `US AQI ${Math.round(aq.usAqi)} (${aqiCategory(aq.usAqi)}). ` +
+      `PM2.5 ${fmt(aq.pm25, ' µg/m³')}; PM10 ${fmt(aq.pm10, ' µg/m³')}; ozone ${fmt(aq.ozone, ' µg/m³')}.`
+    : 'Air quality data is unavailable.');
+  tile.hidden = false;
+}
+
+// Precip nowcast from minutely_15: a one-line summary under the hourly summary.
+// Hidden when there's nothing to say (no minutely data).
+function renderNowcast(data) {
+  const el = $('nowcast');
+  if (!el) return;
+  const samples = parseMinutely(data);
+  const text = samples.length ? nowcastText(samples) : '';
+  el.textContent = text;
+  el.hidden = !text;
 }
 
 function setUpdated(date) {
@@ -568,18 +707,40 @@ function hideDetailTooltip(target) {
   $('detail-tooltip').hidden = true;
 }
 
+// Reveal + refresh the radar card. Lazy: the Leaflet map is created on first
+// reveal (via initRadar inside updateRadar), so it never blocks initial render.
+// Radar is online-only and self-guards, so any failure stays contained here.
+function showRadar(loc) {
+  if (!loc) return;
+  const card = $('radar-card');
+  if (!card) return;
+  card.hidden = false;
+  // Defer map creation to the next frame so the card has layout (Leaflet needs
+  // a sized container) before we build tiles. updateRadar lazily inits the map.
+  requestAnimationFrame(() => {
+    Promise.resolve()
+      .then(() => updateRadar(loc))
+      .catch(() => { /* radar is best-effort — never disturb the page */ });
+  });
+}
+
 function renderAll(data, name, updatedAt) {
   lastUpdatedAt = updatedAt || lastUpdatedAt;
   const hours = sliceNext24(data.hourly, data.current.time);
+  defaultDayHours = hours;          // remembered so "Back" restores the next-24h view exactly
+  selectedDayIso = null;            // a fresh render resets to the default next-24h view
   lastHourlyRaw = hours;            // raw samples power the on-the-hour graph
   lastHours = groupHours(hours, 3); // 3-hour blocks for the strip cells
   renderHero(data.current, data.daily, name);
   renderHourly(lastHours);
   renderDaily(data.daily, data.hourly);
+  syncDayNote();                    // hide the day-note / reflect "today" selection
   renderTiles(data.current, data.daily, hours[0]); // raw current hour for tiles
+  renderNowcast(data);              // minutely_15 precip rides the forecast call
   $('empty').hidden = true;
   showStatus('');
   setUpdated(lastUpdatedAt);
+  showRadar(location_);             // lazy radar reveal/center (online-only, self-guarded)
 }
 
 // ---- Data flow ----
@@ -631,6 +792,23 @@ async function refresh() {
       ? 'Could not refresh — showing last data.'
       : `Could not load weather (${err.message}).`, true);
   }
+  refreshAirQuality();
+}
+
+// Air quality is a best-effort side request on its own host: its own abort
+// controller and try/catch so a failure never disturbs the forecast view.
+async function refreshAirQuality() {
+  if (!location_) return;
+  airController?.abort();
+  airController = new AbortController();
+  const { signal } = airController;
+  const loc = location_;
+  try {
+    const res = await fetch(airQualityUrl(loc.lat, loc.lon), { signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const aq = parseAirQuality(await res.json());
+    if (loc === location_) renderAirQuality(aq); // ignore stale location results
+  } catch { /* air quality is non-essential — leave the page intact */ }
 }
 
 // Reflect the active location in the URL so it can be bookmarked/shared.
@@ -644,7 +822,116 @@ function setLocation(loc) {
   location_ = loc;
   localStorage.setItem(LS_LOC, JSON.stringify(loc));
   syncUrl(loc);
+  renderSavedBar(); // reflect the new active location in the chips
+  syncPinButton();
   refresh();
+}
+
+// ---- Saved locations (chips) ----
+
+function persistSaved() {
+  try { localStorage.setItem(LS_SAVED, JSON.stringify(saved)); }
+  catch { /* storage full or unavailable — best effort */ }
+}
+
+function isSaved(loc) {
+  return !!loc && saved.some((s) => sameLoc(s, loc));
+}
+
+// Toggle the current location in/out of the saved list (the star button).
+function toggleSaved() {
+  if (!location_) return;
+  if (isSaved(location_)) {
+    saved = saved.filter((s) => !sameLoc(s, location_));
+  } else {
+    saved = [...saved, { name: location_.name, lat: location_.lat, lon: location_.lon }];
+  }
+  persistSaved();
+  renderSavedBar();
+  syncPinButton();
+}
+
+function syncPinButton() {
+  const btn = $('pin-btn');
+  const on = isSaved(location_);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.classList.toggle('active', on);
+  const label = on ? 'Remove saved location' : 'Save this location';
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  btn.disabled = !location_;
+}
+
+function renderSavedBar() {
+  const bar = $('saved-bar');
+  if (!bar) return;
+  bar.replaceChildren();
+  if (!saved.length) { bar.hidden = true; return; }
+  const frag = document.createDocumentFragment();
+  saved.forEach((place) => {
+    const active = sameLoc(place, location_);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'saved-chip';
+    chip.setAttribute('role', 'listitem');
+    chip.classList.toggle('active', active);
+    chip.setAttribute('aria-current', active ? 'true' : 'false');
+    chip.textContent = place.name;
+    chip.title = place.name;
+    chip.addEventListener('click', () => setLocation(place));
+    frag.appendChild(chip);
+  });
+  bar.appendChild(frag);
+  bar.hidden = false;
+}
+
+// ---- Tap-a-day (load one day's hours into the hourly graph) ----
+
+// Refresh the "showing <day>" note + Back control, and the day-row pressed state.
+function syncDayNote() {
+  const note = $('day-note');
+  if (!note) return;
+  if (selectedDayIso) {
+    $('day-note-label').textContent = `Showing ${dayNoteLabel(selectedDayIso)}`;
+    note.hidden = false;
+  } else {
+    note.hidden = true;
+  }
+  // Reflect selection on the day rows (today == default view).
+  document.querySelectorAll('#daily-list .day-row').forEach((row) => {
+    const iso = row.dataset.dayIso;
+    const on = selectedDayIso ? iso === selectedDayIso
+      : iso === lastData?.daily?.time?.[0];
+    row.setAttribute('aria-pressed', on ? 'true' : 'false');
+    row.classList.toggle('active', on);
+  });
+}
+
+function dayNoteLabel(iso) {
+  const isToday = lastData?.daily?.time?.[0] === iso;
+  return isToday ? 'today' : formatWeekday(iso);
+}
+
+// Load day i's hours into the hourly graph. Day 0 restores the default 24h view.
+function selectDay(iso, i) {
+  if (!lastData) return;
+  if (i === 0) { restoreDefaultDay(); return; }
+  const hours = sliceDayHours(lastData.hourly, iso);
+  if (!hours.length) return;
+  selectedDayIso = iso;
+  lastHourlyRaw = hours;
+  lastHours = groupHours(hours, 3);
+  renderHourly(lastHours);
+  syncDayNote();
+}
+
+// Restore the original next-24h view (the "Back" control / tapping today).
+function restoreDefaultDay() {
+  selectedDayIso = null;
+  lastHourlyRaw = defaultDayHours;
+  lastHours = groupHours(defaultDayHours, 3);
+  renderHourly(lastHours);
+  syncDayNote();
 }
 
 // ---- Search (combobox) ----
@@ -858,6 +1145,9 @@ $('icon-set-menu').addEventListener('keydown', (e) => {
   }
 });
 $('unit-btn').addEventListener('click', toggleUnit);
+$('scheme-btn').addEventListener('click', cycleScheme);
+$('pin-btn').addEventListener('click', toggleSaved);
+$('day-back-btn').addEventListener('click', restoreDefaultDay);
 $('refresh-btn').addEventListener('click', () => refresh());
 $('metric-toggle').addEventListener('click', (e) => {
   const btn = e.target.closest('.seg-btn');
@@ -902,8 +1192,12 @@ if (location_) {
 }
 
 setUnitLabel();
+setSchemeControl();
+applyScheme();
 setIconSetControl();
 syncMetricToggle();
+renderSavedBar();
+syncPinButton();
 hydrateFromCache();
 refresh();
 refreshTimer = setInterval(refresh, 15 * 60 * 1000);
