@@ -1,0 +1,13 @@
+#!/bin/sh
+# Tracked pre-commit hook. Activate once per clone with:
+#   git config core.hooksPath .githooks
+# Blocks the commit if the type gate or tests fail.
+set -e
+
+echo "pre-commit: typecheck…"
+npm run --silent typecheck
+
+echo "pre-commit: tests…"
+npm test --silent
+
+echo "pre-commit: ok"

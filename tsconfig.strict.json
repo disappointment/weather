@@ -1,9 +1,0 @@
-{
-  "//": "Ratcheting strict gate. Files listed here are fully typed and checked with",
-  "//2": "noImplicitAny on. Move a file from the loose base config to here as it's typed.",
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "noImplicitAny": true
-  },
-  "include": ["app.js", "weather.js", "radar.js", "types/**/*.d.ts"]
-}
