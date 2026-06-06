@@ -5,5 +5,5 @@
   "compilerOptions": {
     "noImplicitAny": true
   },
-  "include": ["weather.js", "types/**/*.d.ts"]
+  "include": ["app.js", "weather.js", "radar.js", "types/**/*.d.ts"]
 }

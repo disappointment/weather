@@ -12,6 +12,7 @@ configMapGenerator:
       - styles.css
       - weather.js
       - app.js
+      - radar.js
       - favicon.svg
       - manifest.webmanifest
       - sw.js

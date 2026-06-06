@@ -10,13 +10,21 @@
 
 const RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
 
+/** @typedef {{ path?: string, time?: number|string }} RadarFrame */
+
+/** @type {any} */
 let map = null;            // the Leaflet map instance (created once)
+/** @type {any} */
 let baseLayer = null;      // OSM base tiles
+/** @type {RadarFrame[]} */
 let frames = [];           // [{ path, time }] past + nowcast, ordered oldest→newest
 let host = '';             // RainViewer tile host
+/** @type {any[]} */
 let frameLayers = [];      // L.tileLayer per frame, lazily created and cached
 let activeIndex = -1;      // currently visible frame index
+/** @type {ReturnType<typeof setInterval> | null} */
 let playTimer = null;      // setInterval handle while playing
+/** @type {import('./weather.js').Place | null} */
 let lastLoc = null;        // remember the last center for re-centering
 
 const FRAME_OPACITY = 0.6;
@@ -60,6 +68,7 @@ function wireControls() {
 }
 
 // Re-center to loc and (re)load RainViewer frames. Creates the map first if needed.
+/** @param {import('./weather.js').Place | null | undefined} loc */
 export async function updateRadar(loc) {
   if (!loc) return;
   lastLoc = loc;
@@ -113,6 +122,7 @@ function resetFrameLayers() {
 // Build (or reuse) the tile layer for a frame. RainViewer tile URL scheme:
 //   host + frame.path + '/256/{z}/{x}/{y}/<color>/<options>.png'
 // color 2 = "Universal Blue", options 1_1 = smooth + snow.
+/** @param {number} i */
 function frameLayer(i) {
   if (frameLayers[i]) return frameLayers[i];
   const leaflet = L();
@@ -126,6 +136,7 @@ function frameLayer(i) {
 }
 
 // Swap the visible frame by toggling opacity (old → 0, new → FRAME_OPACITY).
+/** @param {number} i */
 function showFrame(i) {
   if (i < 0 || i >= frames.length) return;
   const next = frameLayer(i);
@@ -155,6 +166,7 @@ function syncControls() {
   }
 }
 
+/** @param {number|string|undefined} unixSeconds */
 function formatFrameTime(unixSeconds) {
   if (!Number.isFinite(Number(unixSeconds))) return '';
   return new Date(Number(unixSeconds) * 1000)
@@ -183,6 +195,7 @@ function stopPlay() {
   setPlayLabel(false);
 }
 
+/** @param {boolean} playing */
 function setPlayLabel(playing) {
   const play = /** @type {HTMLButtonElement | null} */ (document.getElementById('radar-play'));
   if (!play) return;

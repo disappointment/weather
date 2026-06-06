@@ -5,12 +5,80 @@ import {
   airQualityUrl, parseAirQuality, aqiCategory,
   parseMinutely, nowcastText,
 } from './weather.js';
-import { updateRadar } from './radar.js';
+
+/** @typedef {import('./weather.js').Place} Place */
+/** @typedef {import('./weather.js').TemperatureUnit} TemperatureUnit */
+/** @typedef {import('./weather.js').HourlyData} HourlyData */
+/** @typedef {import('./weather.js').HourSample} HourSample */
+/** @typedef {import('./weather.js').HourBlock} HourBlock */
+/** @typedef {import('./weather.js').AirQuality} AirQuality */
+
+/**
+ * Open-Meteo `current` block (only the fields this app reads).
+ * @typedef {object} CurrentData
+ * @property {string} time
+ * @property {number} temperature_2m
+ * @property {number} relative_humidity_2m
+ * @property {number} apparent_temperature
+ * @property {number} is_day
+ * @property {number} precipitation
+ * @property {number} weather_code
+ * @property {number} wind_speed_10m
+ * @property {number} wind_direction_10m
+ * @property {number} surface_pressure
+ */
+
+/**
+ * Open-Meteo `daily` block: parallel arrays indexed by day.
+ * @typedef {object} DailyData
+ * @property {string[]} time
+ * @property {number[]} weather_code
+ * @property {number[]} temperature_2m_max
+ * @property {number[]} temperature_2m_min
+ * @property {number[]} precipitation_probability_max
+ * @property {string[]} sunrise
+ * @property {string[]} sunset
+ * @property {number[]} uv_index_max
+ */
+
+/**
+ * Full Open-Meteo forecast response (the slices this app reads).
+ * @typedef {object} ForecastData
+ * @property {CurrentData} current
+ * @property {HourlyData} hourly
+ * @property {DailyData} daily
+ */
+
+/**
+ * Fields the metric accessors read. Covers both raw hourly samples (graph) and
+ * grouped blocks (strip cells); every field is optional since blocks omit some.
+ * @typedef {object} MetricSample
+ * @property {number} [temp]
+ * @property {number} [precip]
+ * @property {number} [wind]
+ * @property {number} [humidity]
+ * @property {number} [uv]
+ * @property {number} [feels]
+ */
+
+/**
+ * One hourly-graph metric descriptor. Accessors run over both the raw hourly
+ * samples (graph) and the grouped blocks (strip cells).
+ * @typedef {object} Metric
+ * @property {string} label
+ * @property {(h: MetricSample) => number|undefined} value
+ * @property {(v: number|undefined) => string} cell
+ * @property {(v: number) => string} axis
+ * @property {() => import('./weather.js').GraphDomain} domain
+ * @property {(h: MetricSample) => string} [sub]
+ */
 
 // Elements are static in index.html, so treat lookups as non-null at call sites;
 // genuine nullables (querySelector, event targets, storage) stay guarded.
+/** @param {string} id */
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 // DOM events here always originate from elements; narrow target for .closest/etc.
+/** @param {Event} e */
 const evtEl = (e) => /** @type {HTMLElement} */ (e.target);
 const LS_LOC = 'weather.location';
 const LS_UNIT = 'weather.unit';
@@ -26,27 +94,41 @@ let iconSet = localStorage.getItem(LS_ICON_SET) || 'illustrated';
 const SCHEMES = ['auto', 'light', 'dark'];
 const storedScheme = localStorage.getItem(LS_SCHEME) || 'auto';
 let scheme = SCHEMES.includes(storedScheme) ? storedScheme : 'auto';
+/** @type {Place | null} */
 let location_ = loadJSON(LS_LOC); // { name, lat, lon } | null
+/** @type {ForecastData | null} */
 let lastData = null;
+/** @type {Date | null} */
 let lastUpdatedAt = null;
+/** @type {HourBlock[]} */
 let lastHours = [];               // 3-hour blocks, kept for cell re-renders
+/** @type {HourSample[]} */
 let lastHourlyRaw = [];           // raw hourly samples, kept for the graph curve
 let hourlyMetric = localStorage.getItem(LS_METRIC) || 'temp';
+/** @type {ReturnType<typeof setInterval> | null} */
 let refreshTimer = null;
+/** @type {AbortController | null} */
 let forecastController = null; // aborts in-flight forecast fetches
+/** @type {AbortController | null} */
 let airController = null;       // aborts in-flight air-quality fetches
+/** @type {AbortController | null} */
 let searchController = null;    // aborts in-flight search fetches
 let hourlyRenderId = 0;
 
 // Search/combobox state
+/** @type {Place[]} */
 let currentPlaces = [];
 let activeIndex = -1;
 
 // Saved locations (chips) + tap-a-day state
+/** @type {Place[]} */
 let saved = loadJSON(LS_SAVED) || []; // [{ name, lat, lon }]
+/** @type {string | null} */
 let selectedDayIso = null;            // ISO date of the day shown in the hourly graph, or null for next-24h
+/** @type {HourSample[]} */
 let defaultDayHours = [];             // the original next-24h raw hours, for "Back"
 
+/** @param {string} key */
 function loadJSON(key) {
   try { return JSON.parse(localStorage.getItem(key) ?? 'null'); }
   catch { return null; }
@@ -58,7 +140,7 @@ function setUnitLabel() {
 
 function setIconSetControl() {
   const active = ICON_SETS.has(iconSet) ? iconSet : 'illustrated';
-  $('icon-set-label').textContent = ICON_SET_LABELS[active];
+  $('icon-set-label').textContent = /** @type {Record<string, string>} */ (ICON_SET_LABELS)[active];
   /** @type {NodeListOf<HTMLElement>} */ ($('icon-set-menu').querySelectorAll('[role="option"]')).forEach((option) => {
     const selected = option.dataset.iconSet === active;
     option.setAttribute('aria-selected', selected ? 'true' : 'false');
@@ -66,6 +148,10 @@ function setIconSetControl() {
   });
 }
 
+/**
+ * @param {string} msg
+ * @param {boolean} [isError]
+ */
 function showStatus(msg, isError = false) {
   const el = $('status');
   // Errors interrupt; routine status is announced politely.
@@ -75,6 +161,7 @@ function showStatus(msg, isError = false) {
   el.hidden = !msg;
 }
 
+/** @param {string} theme */
 function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
 }
@@ -100,8 +187,8 @@ function applyScheme() {
 function setSchemeControl() {
   const btn = $('scheme-btn');
   if (!btn) return;
-  /** @type {HTMLElement} */ (btn.querySelector('.scheme-glyph')).textContent = SCHEME_GLYPHS[scheme];
-  const label = `Theme: ${SCHEME_LABELS[scheme]}`;
+  /** @type {HTMLElement} */ (btn.querySelector('.scheme-glyph')).textContent = /** @type {Record<string, string>} */ (SCHEME_GLYPHS)[scheme];
+  const label = `Theme: ${/** @type {Record<string, string>} */ (SCHEME_LABELS)[scheme]}`;
   btn.setAttribute('aria-label', label);
   btn.title = label;
 }
@@ -118,6 +205,7 @@ darkMql.addEventListener('change', () => {
   if (scheme === 'auto') applyScheme();
 });
 
+/** @param {string} name */
 function iconHref(name) { return `#icon-${name}`; }
 
 const ICON_SETS = new Set(['illustrated', 'emoji', 'line', 'mono', 'vivid']);
@@ -162,16 +250,24 @@ const ICON_SET_LABELS = {
   vivid: 'Vivid',
 };
 
+/**
+ * @param {string} name
+ * @param {string} [className]
+ */
 function weatherIconHtml(name, className = 'weather-icon') {
+  /**
+   * @param {string} inner
+   * @param {string} [extra]
+   */
   const wrap = (inner, extra = '') => `<span class="${className} weather-icon-box${extra}" data-icon="${name}" aria-hidden="true">${inner}</span>`;
   if (iconSet === 'emoji') {
-    return wrap(`<span class="weather-emoji">${EMOJI_ICON[name] || '☁️'}</span>`);
+    return wrap(`<span class="weather-emoji">${/** @type {Record<string, string>} */ (EMOJI_ICON)[name] || '☁️'}</span>`);
   }
   if (iconSet === 'vivid') {
-    return wrap(`<span class="weather-emoji">${VIVID_ICON[name] || '☁️'}</span>`);
+    return wrap(`<span class="weather-emoji">${/** @type {Record<string, string>} */ (VIVID_ICON)[name] || '☁️'}</span>`);
   }
   if (iconSet === 'line') {
-    return wrap(`<span class="weather-line">${LINE_ICON[name] || '☁'}</span>`);
+    return wrap(`<span class="weather-line">${/** @type {Record<string, string>} */ (LINE_ICON)[name] || '☁'}</span>`);
   }
   if (iconSet === 'mono') {
     return wrap(`<svg viewBox="0 0 24 24"><use href="${iconHref(`mono-${name}`)}"></use></svg>`, ' weather-icon-mono');
@@ -179,45 +275,65 @@ function weatherIconHtml(name, className = 'weather-icon') {
   return wrap(`<svg viewBox="0 0 24 24"><use href="${iconHref(name)}"></use></svg>`);
 }
 
+/** @param {string} iso */
 function formatClock(iso) {
   return new Date(iso).toLocaleTimeString('en-US',
     { hour: 'numeric', minute: '2-digit' });
 }
+/** @param {string} iso */
 function formatHourLabel(iso) {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric' });
 }
+/** @param {string} iso */
 function formatWeekday(iso) {
   return new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
 }
+/**
+ * @param {string} iso
+ * @param {number} i
+ */
 function formatDayLabel(iso, i) {
   return i === 0 ? 'today' : formatWeekday(iso);
 }
+/** @param {string} s */
 function sentenceCase(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
+/** @param {Date} date */
 function formatUpdated(date) {
   return 'Updated ' + date.toLocaleTimeString('en-US',
     { hour: 'numeric', minute: '2-digit' });
 }
+/**
+ * @param {number|undefined} v
+ * @param {string} [suffix]
+ */
 function formatValue(v, suffix = '') {
-  return Number.isFinite(v) ? `${Math.round(v)}${suffix}` : '—';
+  return Number.isFinite(v) ? `${Math.round(/** @type {number} */ (v))}${suffix}` : '—';
 }
+/** @param {number|undefined} v */
 function uvCategory(v) {
-  if (!Number.isFinite(v)) return 'Unknown';
+  if (!Number.isFinite(v) || v === undefined) return 'Unknown';
   if (v < 3) return 'Low';
   if (v < 6) return 'Moderate';
   if (v < 8) return 'High';
   if (v < 11) return 'Very high';
   return 'Extreme';
 }
+/** @param {number|undefined} v */
 function formatUv(v) {
-  return Number.isFinite(v) ? `${Math.round(v)} (${uvCategory(v)})` : '—';
+  return Number.isFinite(v) ? `${Math.round(/** @type {number} */ (v))} (${uvCategory(v)})` : '—';
 }
 
 // ---- Rendering ----
 
+/** @param {string} id */
 function show(id) { $(id).hidden = false; }
 
+/**
+ * @param {HTMLElement | null} el
+ * @param {string} text
+ */
 function setDetail(el, text) {
   if (!el) return;
   el.dataset.detail = text;
@@ -226,6 +342,11 @@ function setDetail(el, text) {
   if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
 }
 
+/**
+ * @param {CurrentData} cur
+ * @param {DailyData} daily
+ * @param {string} name
+ */
 function renderHero(cur, daily, name) {
   const d = describeWeather(cur.weather_code, cur.is_day);
   const u = unitConfig(unit);
@@ -250,54 +371,70 @@ const GRAPH_PAD = 10;
 
 // Hourly graph metrics (Google-style toggle). Each maps an hour to a value,
 // formats the per-cell label, and pins the graph's y-domain where it matters.
+/** @type {Record<string, Metric>} */
 const METRICS = {
   temp: {
     label: 'Temp',
     value: (h) => h.temp,
-    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}°` : '—'),
+    cell: (v) => (Number.isFinite(v) ? `${Math.round(/** @type {number} */ (v))}°` : '—'),
     // Secondary per-cell readout shown under the temp (temp view only).
-    sub: (h) => (Number.isFinite(h.humidity) ? `${Math.round(h.humidity)}%` : '—'),
+    sub: (h) => (Number.isFinite(h.humidity) ? `${Math.round(/** @type {number} */ (h.humidity))}%` : '—'),
     axis: (v) => `${Math.round(v)}°`,
     domain: () => ({}), // auto min/max — temperature is about the shape
   },
   precip: {
     label: 'Precip',
     value: (h) => h.precip,
-    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}%` : '—'),
+    cell: (v) => (Number.isFinite(v) ? `${Math.round(/** @type {number} */ (v))}%` : '—'),
     axis: (v) => `${Math.round(v)}%`,
     domain: () => ({ min: 0, max: 100 }), // probability is absolute 0–100
   },
   wind: {
     label: 'Wind',
     value: (h) => h.wind,
-    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)} ${unitConfig(unit).windLabel}` : '—'),
+    cell: (v) => (Number.isFinite(v) ? `${Math.round(/** @type {number} */ (v))} ${unitConfig(unit).windLabel}` : '—'),
     axis: (v) => `${Math.round(v)} ${unitConfig(unit).windLabel}`,
     domain: () => ({ min: 0 }), // baseline at calm
   },
   humidity: {
     label: 'Humidity',
     value: (h) => h.humidity,
-    cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}%` : '—'),
+    cell: (v) => (Number.isFinite(v) ? `${Math.round(/** @type {number} */ (v))}%` : '—'),
     axis: (v) => `${Math.round(v)}%`,
     domain: () => ({ min: 0, max: 100 }), // relative humidity is absolute 0–100
   },
   uv: {
     label: 'UV',
     value: (h) => h.uv,
-    cell: (v) => (Number.isFinite(v) ? String(Math.round(v)) : '—'),
+    cell: (v) => (Number.isFinite(v) ? String(Math.round(/** @type {number} */ (v))) : '—'),
     axis: (v) => String(Math.round(v)),
     domain: () => ({ min: 0 }), // baseline at no exposure
   },
 };
 
+/**
+ * @template T
+ * @param {T[]} items
+ * @param {(item: T, index: number) => number|undefined} getValue
+ * @returns {{ item: T, index: number, value: number } | null}
+ */
 function maxBy(items, getValue) {
-  return items.reduce((best, item, index) => {
-    const value = Number(getValue(item, index));
-    if (!Number.isFinite(value)) return best;
-    return !best || value > best.value ? { item, index, value } : best;
-  }, null);
+  return items.reduce(
+    /**
+     * @param {{ item: T, index: number, value: number } | null} best
+     * @param {T} item
+     * @param {number} index
+     */
+    (best, item, index) => {
+      const value = Number(getValue(item, index));
+      if (!Number.isFinite(value)) return best;
+      return !best || value > best.value ? { item, index, value } : best;
+    },
+    /** @type {{ item: T, index: number, value: number } | null} */ (null),
+  );
 }
 
+/** @param {HourBlock[]} hours */
 function summarizeHourly(hours) {
   const warmest = maxBy(hours, (h) => h.temp);
   const wettest = maxBy(hours, (h) => h.precip);
@@ -323,6 +460,7 @@ function summarizeHourly(hours) {
   return parts.join('; ') + '.';
 }
 
+/** @param {DailyData} daily */
 function summarizeDaily(daily) {
   const days = daily.time.map((time, index) => ({
     time,
@@ -355,8 +493,13 @@ function summarizeDaily(daily) {
   return parts.join('; ') + '.';
 }
 
+/**
+ * @param {HourlyData} hourly
+ * @param {string} dateIso
+ */
 function daylightCodesForDate(hourly, dateIso) {
   if (!hourly?.time) return [];
+  /** @type {number[]} */
   const codes = [];
   hourly.time.forEach((time, i) => {
     if (!time.startsWith(dateIso) || !Number(hourly.is_day?.[i])) return;
@@ -366,6 +509,11 @@ function daylightCodesForDate(hourly, dateIso) {
   return codes;
 }
 
+/**
+ * @param {number} dailyCode
+ * @param {HourlyData} hourly
+ * @param {string} dateIso
+ */
 function dailyDisplayCode(dailyCode, hourly, dateIso) {
   const codes = daylightCodesForDate(hourly, dateIso);
   if (!codes.length) return dailyCode;
@@ -377,15 +525,21 @@ function dailyDisplayCode(dailyCode, hourly, dateIso) {
   return dailyCode;
 }
 
+/** @param {HourSample | HourBlock} h */
 function hourlyDetail(h) {
   const d = describeForecastIcon(h.code, h.isDay, h.precip);
   const u = unitConfig(unit);
   return `${formatHourLabel(h.time)}: ${d.label}. ` +
     `Temp ${formatValue(h.temp, '°')}; humidity ${formatValue(h.humidity, '%')}; ` +
     `rain chance ${formatValue(h.precip, '%')}; ` +
-    `wind ${Number.isFinite(h.wind) ? `${Math.round(h.wind)} ${u.windLabel}` : '—'}.`;
+    `wind ${Number.isFinite(h.wind) ? `${Math.round(/** @type {number} */ (h.wind))} ${u.windLabel}` : '—'}.`;
 }
 
+/**
+ * @param {DailyData} daily
+ * @param {number} i
+ * @param {HourlyData} hourly
+ */
 function dailyDetail(daily, i, hourly) {
   const label = i === 0 ? 'Today' : formatWeekday(daily.time[i]);
   const code = dailyDisplayCode(daily.weather_code[i], hourly, daily.time[i]);
@@ -397,20 +551,33 @@ function dailyDetail(daily, i, hourly) {
     `Sunrise ${formatClock(daily.sunrise[i])}; sunset ${formatClock(daily.sunset[i])}.`;
 }
 
+/**
+ * @param {number} code
+ * @param {number|string|boolean} isDay
+ * @param {number|undefined} precip
+ */
 function describeForecastIcon(code, isDay, precip) {
   const d = describeWeather(code, isDay);
-  if (Number.isFinite(precip) && precip >= 35 && !['rain', 'snow', 'thunder'].includes(d.icon)) {
-    return { ...d, icon: 'rain', label: precip >= 60 ? 'Rain likely' : 'Rain possible' };
+  if (Number.isFinite(precip) && /** @type {number} */ (precip) >= 35 && !['rain', 'snow', 'thunder'].includes(d.icon)) {
+    return { ...d, icon: 'rain', label: /** @type {number} */ (precip) >= 60 ? 'Rain likely' : 'Rain possible' };
   }
   return d;
 }
 
+/** @param {import('./weather.js').Point[]} points */
 function pathFromPoints(points) {
   return points.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
 }
 
 // xOf maps an hourly index to its pixel x. The curve carries a point per hour;
 // labelEvery keeps the per-point value text at the cell cadence (every 3rd).
+/**
+ * @param {HourSample[]} hours
+ * @param {string} metric
+ * @param {number} width
+ * @param {(i: number) => number} xOf
+ * @param {number} [labelEvery]
+ */
 function metricGraphSvg(hours, metric, width, xOf, labelEvery = 3) {
   const m = METRICS[metric] || METRICS.temp;
   const valid = hours
@@ -419,14 +586,15 @@ function metricGraphSvg(hours, metric, width, xOf, labelEvery = 3) {
   if (valid.length < 2 || !Number.isFinite(width) || width <= 0) return '';
 
   const domain = m.domain();
-  let min = Number.isFinite(domain.min) ? domain.min : Math.min(...valid.map((p) => p.value));
-  let max = Number.isFinite(domain.max) ? domain.max : Math.max(...valid.map((p) => p.value));
+  let min = Number.isFinite(domain.min) ? /** @type {number} */ (domain.min) : Math.min(...valid.map((p) => p.value));
+  let max = Number.isFinite(domain.max) ? /** @type {number} */ (domain.max) : Math.max(...valid.map((p) => p.value));
   if (min === max) {
     min -= 1;
     max += 1;
   }
 
   const drawable = GRAPH_H - GRAPH_PAD * 2;
+  /** @param {number} value */
   const yOf = (value) => {
     const clamped = Math.max(min, Math.min(max, value));
     return GRAPH_PAD + ((max - clamped) / (max - min)) * drawable;
@@ -436,8 +604,10 @@ function metricGraphSvg(hours, metric, width, xOf, labelEvery = 3) {
 
   // Night shading: shade contiguous spans where the raw hour's isDay is falsy,
   // behind the area. Half-step out on each side so a span hugs its hour cells.
+  /** @type {string[]} */
   const nightRects = [];
   let runStart = -1;
+  /** @param {number} end */
   const flushRun = (end) => {
     if (runStart < 0) return;
     const x1 = Math.max(0, Math.min(width, xOf(runStart - 0.5)));
@@ -505,6 +675,12 @@ function metricGraphSvg(hours, metric, width, xOf, labelEvery = 3) {
 
 // hours here are the raw hourly samples. Cells sit at every 3rd hour, so we read
 // their centers and interpolate a per-hour pitch to place a dot on each hour.
+/**
+ * @param {HTMLElement} strip
+ * @param {HourSample[]} hours
+ * @param {string} metric
+ * @param {number} renderId
+ */
 function renderHourlyGraph(strip, hours, metric, renderId) {
   requestAnimationFrame(() => {
     if (renderId !== hourlyRenderId) return;
@@ -518,6 +694,7 @@ function renderHourlyGraph(strip, hours, metric, renderId) {
       return rect.left - stripRect.left + rect.width / 2;
     });
     const pitch = (centers[1] - centers[0]) / 3; // px per hour (cells are 3-hourly)
+    /** @param {number} i */
     const xOf = (i) => centers[0] + i * pitch;
     // Keep the curve within the cells' span so the SVG never widens the
     // scroll area. scrollWidth here is the cells-only extent (graph not yet in).
@@ -528,6 +705,7 @@ function renderHourlyGraph(strip, hours, metric, renderId) {
   });
 }
 
+/** @param {HourBlock[]} hours */
 function renderHourly(hours) {
   const strip = $('hourly-strip');
   const m = METRICS[hourlyMetric] || METRICS.temp;
@@ -545,7 +723,7 @@ function renderHourly(hours) {
       <div class="h-time">${formatHourLabel(h.time)}</div>
       ${weatherIconHtml(d.icon)}
       <div class="h-val">${m.cell(m.value(h))}</div>
-      ${hasSub ? `<div class="h-sub"><svg class="h-sub-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-humidity"></use></svg>${m.sub(h)}</div>` : ''}`;
+      ${hasSub ? `<div class="h-sub"><svg class="h-sub-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-humidity"></use></svg>${/** @type {NonNullable<Metric['sub']>} */ (m.sub)(h)}</div>` : ''}`;
     setDetail(cell, hourlyDetail(h));
     frag.appendChild(cell);
   });
@@ -557,6 +735,7 @@ function renderHourly(hours) {
   renderHourlyGraph(strip, lastHourlyRaw, hourlyMetric, renderId);
 }
 
+/** @type {ReturnType<typeof setTimeout> | undefined} */
 let hourlyResizeDebounce;
 function redrawHourlyGraph() {
   if (!lastHourlyRaw.length || $('hourly-card').hidden) return;
@@ -574,6 +753,7 @@ function syncMetricToggle() {
   });
 }
 
+/** @param {string} metric */
 function setMetric(metric) {
   if (!METRICS[metric]) return;
   hourlyMetric = metric;
@@ -582,6 +762,10 @@ function setMetric(metric) {
   else syncMetricToggle();
 }
 
+/**
+ * @param {DailyData} daily
+ * @param {HourlyData} hourly
+ */
 function renderDaily(daily, hourly) {
   const weekMin = Math.min(...daily.temperature_2m_min);
   const weekMax = Math.max(...daily.temperature_2m_max);
@@ -621,6 +805,11 @@ function renderDaily(daily, hourly) {
   show('daily-card');
 }
 
+/**
+ * @param {CurrentData} cur
+ * @param {DailyData} daily
+ * @param {HourSample | undefined} firstHour
+ */
 function renderTiles(cur, daily, firstHour) {
   const u = unitConfig(unit);
   $('t-wind').textContent =
@@ -649,14 +838,19 @@ function renderTiles(cur, daily, firstHour) {
 
 // Air quality lives in its own tile; data arrives from a separate API call, so
 // it renders independently of renderTiles (which has only forecast data).
+/** @param {AirQuality} aq */
 function renderAirQuality(aq) {
   const tile = /** @type {HTMLElement | null} */ ($('t-aqi')?.closest('.tile'));
   if (!tile) return;
   const hasAqi = Number.isFinite(aq.usAqi);
-  $('t-aqi').textContent = hasAqi ? `${Math.round(aq.usAqi)} (${aqiCategory(aq.usAqi)})` : '—';
-  const fmt = (v, suffix) => (Number.isFinite(v) ? `${Math.round(v)}${suffix}` : '—');
+  $('t-aqi').textContent = hasAqi ? `${Math.round(/** @type {number} */ (aq.usAqi))} (${aqiCategory(aq.usAqi)})` : '—';
+  /**
+   * @param {number|undefined} v
+   * @param {string} suffix
+   */
+  const fmt = (v, suffix) => (Number.isFinite(v) ? `${Math.round(/** @type {number} */ (v))}${suffix}` : '—');
   setDetail(tile, hasAqi
-    ? `US AQI ${Math.round(aq.usAqi)} (${aqiCategory(aq.usAqi)}). ` +
+    ? `US AQI ${Math.round(/** @type {number} */ (aq.usAqi))} (${aqiCategory(aq.usAqi)}). ` +
       `PM2.5 ${fmt(aq.pm25, ' µg/m³')}; PM10 ${fmt(aq.pm10, ' µg/m³')}; ozone ${fmt(aq.ozone, ' µg/m³')}.`
     : 'Air quality data is unavailable.');
   tile.hidden = false;
@@ -664,6 +858,7 @@ function renderAirQuality(aq) {
 
 // Precip nowcast from minutely_15: a one-line summary under the hourly summary.
 // Hidden when there's nothing to say (no minutely data).
+/** @param {any} data */
 function renderNowcast(data) {
   const el = $('nowcast');
   if (!el) return;
@@ -673,12 +868,15 @@ function renderNowcast(data) {
   el.hidden = !text;
 }
 
+/** @param {Date | null} date */
 function setUpdated(date) {
   $('updated-time').textContent = date ? formatUpdated(date) : '';
   $('refresh-btn').hidden = false;
 }
 
+/** @type {HTMLElement | null} */
 let detailTarget = null;
+/** @param {HTMLElement} target */
 function positionDetailTooltip(target) {
   const tip = $('detail-tooltip');
   const rect = target.getBoundingClientRect();
@@ -696,7 +894,9 @@ function positionDetailTooltip(target) {
   tip.style.top = `${top}px`;
 }
 
-function showDetailTooltip(target) {
+/** @param {Element | null} targetEl */
+function showDetailTooltip(targetEl) {
+  const target = /** @type {HTMLElement | null} */ (targetEl);
   if (!target?.dataset.detail) return;
   detailTarget = target;
   const tip = $('detail-tooltip');
@@ -707,7 +907,9 @@ function showDetailTooltip(target) {
   });
 }
 
-function hideDetailTooltip(target) {
+/** @param {Element | null} targetEl */
+function hideDetailTooltip(targetEl) {
+  const target = /** @type {HTMLElement | null} */ (targetEl);
   if (target && detailTarget !== target) return;
   detailTarget = null;
   $('detail-tooltip').hidden = true;
@@ -716,20 +918,31 @@ function hideDetailTooltip(target) {
 // Reveal + refresh the radar card. Lazy: the Leaflet map is created on first
 // reveal (via initRadar inside updateRadar), so it never blocks initial render.
 // Radar is online-only and self-guards, so any failure stays contained here.
+/** @param {Place | null} loc */
 function showRadar(loc) {
   if (!loc) return;
   const card = $('radar-card');
   if (!card) return;
-  card.hidden = false;
   // Defer map creation to the next frame so the card has layout (Leaflet needs
-  // a sized container) before we build tiles. updateRadar lazily inits the map.
+  // a sized container) before we build tiles. Radar is dynamically imported so
+  // a bad deployed /radar.js MIME type cannot break the main weather app.
   requestAnimationFrame(() => {
-    Promise.resolve()
-      .then(() => updateRadar(loc))
-      .catch(() => { /* radar is best-effort — never disturb the page */ });
+    import('./radar.js')
+      .then(({ updateRadar }) => {
+        card.hidden = false;
+        return updateRadar(loc);
+      })
+      .catch(() => {
+        card.hidden = true;
+      });
   });
 }
 
+/**
+ * @param {ForecastData} data
+ * @param {string} name
+ * @param {Date | null} [updatedAt]
+ */
 function renderAll(data, name, updatedAt) {
   lastUpdatedAt = updatedAt || lastUpdatedAt;
   const hours = sliceNext24(data.hourly, data.current.time);
@@ -751,10 +964,15 @@ function renderAll(data, name, updatedAt) {
 
 // ---- Data flow ----
 
+/**
+ * @param {Place | null | undefined} a
+ * @param {Place | null | undefined} b
+ */
 function sameLoc(a, b) {
   return a && b && Math.abs(a.lat - b.lat) < 1e-4 && Math.abs(a.lon - b.lon) < 1e-4;
 }
 
+/** @param {ForecastData} data */
 function persist(data) {
   try {
     localStorage.setItem(LS_DATA,
@@ -820,11 +1038,13 @@ async function refreshAirQuality() {
 
 // Reflect the active location in the URL so it can be bookmarked/shared.
 // replaceState (not push) keeps the back button from filling with cities.
+/** @param {Place} loc */
 function syncUrl(loc) {
   window.history.replaceState(null, '',
     `${window.location.pathname}?${locationQuery(loc)}`);
 }
 
+/** @param {Place} loc */
 function setLocation(loc) {
   location_ = loc;
   localStorage.setItem(LS_LOC, JSON.stringify(loc));
@@ -841,6 +1061,7 @@ function persistSaved() {
   catch { /* storage full or unavailable — best effort */ }
 }
 
+/** @param {Place | null} loc */
 function isSaved(loc) {
   return !!loc && saved.some((s) => sameLoc(s, loc));
 }
@@ -881,7 +1102,7 @@ function renderSavedBar() {
     chip.type = 'button';
     chip.className = 'saved-chip';
     chip.setAttribute('role', 'listitem');
-    chip.classList.toggle('active', active);
+    chip.classList.toggle('active', /** @type {boolean} */ (active));
     chip.setAttribute('aria-current', active ? 'true' : 'false');
     chip.textContent = place.name;
     chip.title = place.name;
@@ -914,12 +1135,17 @@ function syncDayNote() {
   });
 }
 
+/** @param {string} iso */
 function dayNoteLabel(iso) {
   const isToday = lastData?.daily?.time?.[0] === iso;
   return isToday ? 'today' : formatWeekday(iso);
 }
 
 // Load day i's hours into the hourly graph. Day 0 restores the default 24h view.
+/**
+ * @param {string} iso
+ * @param {number} i
+ */
 function selectDay(iso, i) {
   if (!lastData) return;
   if (i === 0) { restoreDefaultDay(); return; }
@@ -943,6 +1169,7 @@ function restoreDefaultDay() {
 
 // ---- Search (combobox) ----
 
+/** @param {string} text */
 function mutedItem(text) {
   const li = document.createElement('li');
   li.className = 'muted';
@@ -962,6 +1189,7 @@ function closeResults() {
   activeIndex = -1;
 }
 
+/** @param {number} i */
 function selectPlace(i) {
   const p = currentPlaces[i];
   if (!p) return;
@@ -970,6 +1198,7 @@ function selectPlace(i) {
   setLocation(p);
 }
 
+/** @param {number} delta */
 function moveActive(delta) {
   if (!currentPlaces.length) return;
   activeIndex = (activeIndex + delta + currentPlaces.length) % currentPlaces.length;
@@ -983,6 +1212,7 @@ function moveActive(delta) {
     activeIndex >= 0 ? `result-${activeIndex}` : '');
 }
 
+/** @param {string} query */
 async function doSearch(query) {
   const list = $('search-results');
   if (!query.trim()) { closeResults(); return; }
@@ -1053,6 +1283,7 @@ function useMyLocation() {
       setLocation({ name, lat, lon });
     }, (err) => {
       // 1 = permission denied, 2 = unavailable, 3 = timeout
+      /** @type {Record<number, [string, boolean]>} */
       const map = {
         1: ['Location is blocked for this site — allow it in browser permissions, or search instead.', false],
         2: ['Location unavailable — search a city instead.', true],
@@ -1071,9 +1302,10 @@ function toggleUnit() {
   refresh();
 }
 
+/** @param {string | undefined} next */
 function setIconSet(next) {
-  if (!ICON_SETS.has(next)) return;
-  iconSet = next;
+  if (!ICON_SETS.has(/** @type {string} */ (next))) return;
+  iconSet = /** @type {string} */ (next);
   localStorage.setItem(LS_ICON_SET, iconSet);
   setIconSetControl();
   closeIconSetMenu();
@@ -1097,6 +1329,7 @@ function toggleIconSetMenu() {
 
 // ---- Events & init ----
 
+/** @type {ReturnType<typeof setTimeout> | undefined} */
 let searchDebounce;
 $('search-input').addEventListener('input', (e) => {
   clearTimeout(searchDebounce);
@@ -1159,7 +1392,7 @@ $('day-back-btn').addEventListener('click', restoreDefaultDay);
 $('refresh-btn').addEventListener('click', () => refresh());
 $('metric-toggle').addEventListener('click', (e) => {
   const btn = /** @type {HTMLElement | null} */ (evtEl(e).closest('.seg-btn'));
-  if (btn) setMetric(btn.dataset.metric);
+  if (btn) setMetric(/** @type {string} */ (btn.dataset.metric));
 });
 document.addEventListener('click', (e) => {
   if (!evtEl(e).closest('.search')) closeResults();
