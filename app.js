@@ -81,13 +81,14 @@ const LINE_ICON = {
 };
 
 function weatherIconHtml(name, className = 'weather-icon') {
+  const wrap = (inner) => `<span class="${className} weather-icon-box" data-icon="${name}" aria-hidden="true">${inner}</span>`;
   if (iconSet === 'emoji') {
-    return `<span class="${className} weather-emoji" data-icon="${name}" aria-hidden="true">${EMOJI_ICON[name] || '☁️'}</span>`;
+    return wrap(`<span class="weather-emoji">${EMOJI_ICON[name] || '☁️'}</span>`);
   }
   if (iconSet === 'line') {
-    return `<span class="${className} weather-line" data-icon="${name}" aria-hidden="true">${LINE_ICON[name] || '☁'}</span>`;
+    return wrap(`<span class="weather-line">${LINE_ICON[name] || '☁'}</span>`);
   }
-  return `<svg class="${className}" data-icon="${name}" viewBox="0 0 24 24" aria-hidden="true"><use href="${iconHref(name)}"></use></svg>`;
+  return wrap(`<svg viewBox="0 0 24 24"><use href="${iconHref(name)}"></use></svg>`);
 }
 
 function formatClock(iso) {
@@ -323,16 +324,22 @@ function metricGraphSvg(hours, metric, width, centers) {
   const points = valid.map((p) => {
     const clamped = Math.max(min, Math.min(max, p.value));
     const y = GRAPH_PAD + ((max - clamped) / (max - min)) * drawable;
-    return { x: p.x, y };
+    return { x: p.x, y, value: p.value };
   });
   const line = pathFromPoints(points);
   const first = points[0];
   const last = points[points.length - 1];
-  const area = `${line} L ${last.x.toFixed(1)} ${GRAPH_H} L ${first.x.toFixed(1)} ${GRAPH_H} Z`;
-  const dots = points.map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.7"/>`).join('');
   const topY = GRAPH_PAD;
   const bottomY = GRAPH_H - GRAPH_PAD;
-  const labelX = Math.max(42, width - 4);
+  const area = `${line} L ${last.x.toFixed(1)} ${bottomY} L ${first.x.toFixed(1)} ${bottomY} Z`;
+  const dots = points.map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.7"/>`).join('');
+  const valueLabels = points
+    .map((p) => {
+      const y = p.y < 20 ? p.y + 15 : p.y - 8;
+      return `<text x="${p.x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle">${m.axis(p.value)}</text>`;
+    })
+    .join('');
+  const labelX = 4;
   const topLabel = m.axis(max);
   const bottomLabel = m.axis(min);
   return `
@@ -341,11 +348,12 @@ function metricGraphSvg(hours, metric, width, centers) {
       <g class="graph-axis">
         <line x1="0" y1="${topY}" x2="${width}" y2="${topY}"/>
         <line x1="0" y1="${bottomY}" x2="${width}" y2="${bottomY}"/>
-        <text x="${labelX}" y="${topY + 3}" text-anchor="end">${topLabel}</text>
-        <text x="${labelX}" y="${bottomY + 3}" text-anchor="end">${bottomLabel}</text>
+        <text x="${labelX}" y="${topY + 3}" text-anchor="start">${topLabel}</text>
+        <text x="${labelX}" y="${bottomY + 3}" text-anchor="start">${bottomLabel}</text>
       </g>
       <path class="graph-area" d="${area}"/>
       <path class="graph-line" d="${line}"/>
+      <g class="graph-values">${valueLabels}</g>
       <g class="graph-dots">${dots}</g>
     </svg>`;
 }
@@ -363,7 +371,9 @@ function renderHourlyGraph(strip, hours, metric, renderId) {
       return rect.left - stripRect.left + rect.width / 2;
     });
     const lastRect = cells[cells.length - 1].getBoundingClientRect();
-    const contentWidth = Math.max(strip.clientWidth, lastRect.right - stripRect.left);
+    const style = getComputedStyle(strip);
+    const padLeft = parseFloat(style.paddingLeft) || 0;
+    const contentWidth = Math.max(strip.clientWidth, lastRect.right - stripRect.left + padLeft);
     strip.insertAdjacentHTML('afterbegin', metricGraphSvg(hours, metric, Math.ceil(contentWidth), centers));
   });
 }
