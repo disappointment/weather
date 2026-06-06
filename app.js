@@ -16,7 +16,8 @@ let iconSet = localStorage.getItem(LS_ICON_SET) || 'illustrated';
 let location_ = loadJSON(LS_LOC); // { name, lat, lon } | null
 let lastData = null;
 let lastUpdatedAt = null;
-let lastHours = [];               // sliced hourly data, kept for metric re-renders
+let lastHours = [];               // 3-hour blocks, kept for cell re-renders
+let lastHourlyRaw = [];           // raw hourly samples, kept for the graph curve
 let hourlyMetric = localStorage.getItem(LS_METRIC) || 'temp';
 let refreshTimer = null;
 let forecastController = null; // aborts in-flight forecast fetches
@@ -61,7 +62,7 @@ function setTheme(theme) {
 
 function iconHref(name) { return `#icon-${name}`; }
 
-const ICON_SETS = new Set(['illustrated', 'emoji', 'line']);
+const ICON_SETS = new Set(['illustrated', 'emoji', 'line', 'mono', 'vivid']);
 const EMOJI_ICON = {
   sun: '☀️',
   moon: '🌙',
@@ -70,6 +71,17 @@ const EMOJI_ICON = {
   cloud: '☁️',
   rain: '🌧️',
   snow: '❄️',
+  fog: '🌫️',
+  thunder: '⛈️',
+};
+const VIVID_ICON = {
+  sun: '🌞',
+  moon: '🌜',
+  'partly-day': '⛅',
+  'partly-night': '🌥️',
+  cloud: '☁️',
+  rain: '🌧️',
+  snow: '🌨️',
   fog: '🌫️',
   thunder: '⛈️',
 };
@@ -88,15 +100,23 @@ const ICON_SET_LABELS = {
   illustrated: 'Illustrated',
   emoji: 'Emoji',
   line: 'Line',
+  mono: 'Mono',
+  vivid: 'Vivid',
 };
 
 function weatherIconHtml(name, className = 'weather-icon') {
-  const wrap = (inner) => `<span class="${className} weather-icon-box" data-icon="${name}" aria-hidden="true">${inner}</span>`;
+  const wrap = (inner, extra = '') => `<span class="${className} weather-icon-box${extra}" data-icon="${name}" aria-hidden="true">${inner}</span>`;
   if (iconSet === 'emoji') {
     return wrap(`<span class="weather-emoji">${EMOJI_ICON[name] || '☁️'}</span>`);
   }
+  if (iconSet === 'vivid') {
+    return wrap(`<span class="weather-emoji">${VIVID_ICON[name] || '☁️'}</span>`);
+  }
   if (iconSet === 'line') {
     return wrap(`<span class="weather-line">${LINE_ICON[name] || '☁'}</span>`);
+  }
+  if (iconSet === 'mono') {
+    return wrap(`<svg viewBox="0 0 24 24"><use href="${iconHref(`mono-${name}`)}"></use></svg>`, ' weather-icon-mono');
   }
   return wrap(`<svg viewBox="0 0 24 24"><use href="${iconHref(name)}"></use></svg>`);
 }
@@ -177,6 +197,8 @@ const METRICS = {
     label: 'Temp',
     value: (h) => h.temp,
     cell: (v) => (Number.isFinite(v) ? `${Math.round(v)}°` : '—'),
+    // Secondary per-cell readout shown under the temp (temp view only).
+    sub: (h) => (Number.isFinite(h.humidity) ? `${Math.round(h.humidity)}%` : '—'),
     axis: (v) => `${Math.round(v)}°`,
     domain: () => ({}), // auto min/max — temperature is about the shape
   },
@@ -287,7 +309,8 @@ function hourlyDetail(h) {
   const d = describeForecastIcon(h.code, h.isDay, h.precip);
   const u = unitConfig(unit);
   return `${formatHourLabel(h.time)}: ${d.label}. ` +
-    `Temp ${formatValue(h.temp, '°')}; rain chance ${formatValue(h.precip, '%')}; ` +
+    `Temp ${formatValue(h.temp, '°')}; humidity ${formatValue(h.humidity, '%')}; ` +
+    `rain chance ${formatValue(h.precip, '%')}; ` +
     `wind ${Number.isFinite(h.wind) ? `${Math.round(h.wind)} ${u.windLabel}` : '—'}.`;
 }
 
@@ -314,11 +337,12 @@ function pathFromPoints(points) {
   return points.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
 }
 
-function metricGraphSvg(hours, metric, width, centers) {
+// xOf maps an hourly index to its pixel x. The curve carries a point per hour;
+// labelEvery keeps the per-point value text at the cell cadence (every 3rd).
+function metricGraphSvg(hours, metric, width, xOf, labelEvery = 3) {
   const m = METRICS[metric] || METRICS.temp;
-  const values = hours.map(m.value);
-  const valid = values
-    .map((value, i) => ({ value: Number(value), x: centers[i] }))
+  const valid = hours
+    .map((h, i) => ({ value: Number(m.value(h)), x: xOf(i), index: i }))
     .filter((p) => Number.isFinite(p.value) && Number.isFinite(p.x));
   if (valid.length < 2 || !Number.isFinite(width) || width <= 0) return '';
 
@@ -334,7 +358,7 @@ function metricGraphSvg(hours, metric, width, centers) {
   const points = valid.map((p) => {
     const clamped = Math.max(min, Math.min(max, p.value));
     const y = GRAPH_PAD + ((max - clamped) / (max - min)) * drawable;
-    return { x: p.x, y, value: p.value };
+    return { x: p.x, y, value: p.value, index: p.index };
   });
   const line = pathFromPoints(points);
   const first = points[0];
@@ -344,6 +368,7 @@ function metricGraphSvg(hours, metric, width, centers) {
   const area = `${line} L ${last.x.toFixed(1)} ${bottomY} L ${first.x.toFixed(1)} ${bottomY} Z`;
   const dots = points.map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="1.7"/>`).join('');
   const valueLabels = points
+    .filter((p) => p.index % labelEvery === 0)
     .map((p) => {
       const y = p.y < 20 ? p.y + 15 : p.y - 8;
       return `<text x="${p.x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle">${m.axis(p.value)}</text>`;
@@ -368,23 +393,31 @@ function metricGraphSvg(hours, metric, width, centers) {
     </svg>`;
 }
 
+// hours here are the raw hourly samples. Cells sit at every 3rd hour, so we read
+// their centers and interpolate a per-hour pitch to place a dot on each hour.
 function renderHourlyGraph(strip, hours, metric, renderId) {
   requestAnimationFrame(() => {
     if (renderId !== hourlyRenderId) return;
     strip.querySelector('.hourly-graph')?.remove();
     const cells = [...strip.querySelectorAll('.hour')];
-    if (cells.length < 2) return;
+    if (cells.length < 2 || hours.length < 2) return;
 
     const stripRect = strip.getBoundingClientRect();
     const centers = cells.map((cell) => {
       const rect = cell.getBoundingClientRect();
       return rect.left - stripRect.left + rect.width / 2;
     });
+    const pitch = (centers[1] - centers[0]) / 3; // px per hour (cells are 3-hourly)
+    const xOf = (i) => centers[0] + i * pitch;
     const lastRect = cells[cells.length - 1].getBoundingClientRect();
     const style = getComputedStyle(strip);
     const padLeft = parseFloat(style.paddingLeft) || 0;
-    const contentWidth = Math.max(strip.clientWidth, lastRect.right - stripRect.left + padLeft);
-    strip.insertAdjacentHTML('afterbegin', metricGraphSvg(hours, metric, Math.ceil(contentWidth), centers));
+    const contentWidth = Math.max(
+      strip.clientWidth,
+      lastRect.right - stripRect.left + padLeft,
+      xOf(hours.length - 1) + 6,
+    );
+    strip.insertAdjacentHTML('afterbegin', metricGraphSvg(hours, metric, Math.ceil(contentWidth), xOf));
   });
 }
 
@@ -394,6 +427,8 @@ function renderHourly(hours) {
   const renderId = ++hourlyRenderId;
   strip.textContent = '';
   strip.style.setProperty('--hour-count', Math.max(hours.length, 1));
+  const hasSub = typeof m.sub === 'function';
+  strip.classList.toggle('show-sub', hasSub);
   const frag = document.createDocumentFragment();
   hours.forEach((h) => {
     const d = describeForecastIcon(h.code, h.isDay, h.precip);
@@ -402,7 +437,8 @@ function renderHourly(hours) {
     cell.innerHTML = `
       <div class="h-time">${formatHourLabel(h.time)}</div>
       ${weatherIconHtml(d.icon)}
-      <div class="h-val">${m.cell(m.value(h))}</div>`;
+      <div class="h-val">${m.cell(m.value(h))}</div>
+      ${hasSub ? `<div class="h-sub"><svg class="h-sub-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-humidity"></use></svg>${m.sub(h)}</div>` : ''}`;
     setDetail(cell, hourlyDetail(h));
     frag.appendChild(cell);
   });
@@ -410,15 +446,16 @@ function renderHourly(hours) {
   $('hourly-summary').textContent = summarizeHourly(hours);
   syncMetricToggle();
   show('hourly-card');
-  renderHourlyGraph(strip, hours, hourlyMetric, renderId);
+  // The curve uses raw hourly samples for an on-the-hour resolution.
+  renderHourlyGraph(strip, lastHourlyRaw, hourlyMetric, renderId);
 }
 
 let hourlyResizeDebounce;
 function redrawHourlyGraph() {
-  if (!lastHours.length || $('hourly-card').hidden) return;
+  if (!lastHourlyRaw.length || $('hourly-card').hidden) return;
   clearTimeout(hourlyResizeDebounce);
   hourlyResizeDebounce = setTimeout(() => {
-    renderHourlyGraph($('hourly-strip'), lastHours, hourlyMetric, ++hourlyRenderId);
+    renderHourlyGraph($('hourly-strip'), lastHourlyRaw, hourlyMetric, ++hourlyRenderId);
   }, 80);
 }
 
@@ -537,7 +574,8 @@ function hideDetailTooltip(target) {
 function renderAll(data, name, updatedAt) {
   lastUpdatedAt = updatedAt || lastUpdatedAt;
   const hours = sliceNext24(data.hourly, data.current.time);
-  lastHours = groupHours(hours, 3); // 3-hour blocks for the strip
+  lastHourlyRaw = hours;            // raw samples power the on-the-hour graph
+  lastHours = groupHours(hours, 3); // 3-hour blocks for the strip cells
   renderHero(data.current, data.daily, name);
   renderHourly(lastHours);
   renderDaily(data.daily, data.hourly);

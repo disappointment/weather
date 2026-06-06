@@ -168,6 +168,7 @@ export function sliceNext24(hourly, currentIso) {
       isDay: hourly.is_day[i],
       precip: hourly.precipitation_probability[i],
       wind: hourly.wind_speed_10m?.[i],
+      humidity: hourly.relative_humidity_2m?.[i],
       uv: hourly.uv_index[i],
       visibility: hourly.visibility[i],
     });
@@ -186,6 +187,7 @@ export function groupHours(hours, size = 3) {
     const temps = chunk.map((h) => h.temp).filter(Number.isFinite);
     const precs = chunk.map((h) => h.precip).filter(Number.isFinite);
     const winds = chunk.map((h) => h.wind).filter(Number.isFinite);
+    const hums = chunk.map((h) => h.humidity).filter(Number.isFinite);
     const codes = chunk.map((h) => h.code).filter(Number.isFinite);
     blocks.push({
       time: chunk[0].time,
@@ -193,6 +195,7 @@ export function groupHours(hours, size = 3) {
       temp: temps.length ? avg(temps) : undefined,
       precip: precs.length ? Math.max(...precs) : undefined,
       wind: winds.length ? Math.max(...winds) : undefined,
+      humidity: hums.length ? avg(hums) : undefined,
       code: codes.length ? Math.max(...codes) : chunk[0].code,
     });
   }
@@ -208,6 +211,7 @@ const CURRENT = [
 const HOURLY = [
   'temperature_2m', 'weather_code', 'precipitation_probability',
   'is_day', 'uv_index', 'visibility', 'wind_speed_10m',
+  'relative_humidity_2m',
 ].join(',');
 
 const DAILY = [

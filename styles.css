@@ -350,9 +350,8 @@ button {
   padding: 5px;
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--card-strong), white 20%);
+  background: #fbfdff;
   box-shadow: 0 14px 34px rgba(20, 42, 64, 0.16), var(--inner-shadow);
-  backdrop-filter: blur(16px) saturate(1.12);
 }
 
 .icon-set-menu button {
@@ -739,6 +738,27 @@ button {
   scroll-snap-align: start;
 }
 
+/* Temp view adds a humidity readout under the value. */
+.hourly-strip.show-sub .hour {
+  grid-template-rows: 18px 28px 18px 16px;
+  min-height: 106px;
+}
+
+.hour .h-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.hour .h-sub-icon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.85;
+}
+
 .hour .h-time {
   color: var(--muted);
   font-size: 12px;
@@ -759,6 +779,12 @@ button {
 .hour .weather-line {
   font-size: 39px;
   filter: none;
+}
+
+/* Mono set: theme-tinted outlines, no colored drop-shadow. */
+.weather-icon-box.weather-icon-mono {
+  filter: none;
+  color: var(--fg);
 }
 
 .hour .h-val {
