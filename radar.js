@@ -48,8 +48,8 @@ export function initRadar() {
 }
 
 function wireControls() {
-  const play = document.getElementById('radar-play');
-  const scrub = document.getElementById('radar-scrub');
+  const play = /** @type {HTMLButtonElement | null} */ (document.getElementById('radar-play'));
+  const scrub = /** @type {HTMLInputElement | null} */ (document.getElementById('radar-scrub'));
   if (play) play.addEventListener('click', togglePlay);
   if (scrub) {
     scrub.addEventListener('input', () => {
@@ -139,9 +139,9 @@ function showFrame(i) {
 }
 
 function syncControls() {
-  const scrub = document.getElementById('radar-scrub');
+  const scrub = /** @type {HTMLInputElement | null} */ (document.getElementById('radar-scrub'));
   const time = document.getElementById('radar-time');
-  const play = document.getElementById('radar-play');
+  const play = /** @type {HTMLButtonElement | null} */ (document.getElementById('radar-play'));
   const has = frames.length > 0;
   if (scrub) {
     scrub.max = String(Math.max(0, frames.length - 1));
@@ -184,7 +184,7 @@ function stopPlay() {
 }
 
 function setPlayLabel(playing) {
-  const play = document.getElementById('radar-play');
+  const play = /** @type {HTMLButtonElement | null} */ (document.getElementById('radar-play'));
   if (!play) return;
   play.textContent = playing ? '❚❚' : '▶';
   const label = playing ? 'Pause radar animation' : 'Play radar animation';

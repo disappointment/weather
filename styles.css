@@ -1382,6 +1382,18 @@ button {
   }
 }
 
+/* The controls row holds search + five buttons; on phones that's too tight for
+   one line, so let it wrap — search takes a full row, buttons flow underneath. */
+@media (max-width: 480px) {
+  .controls {
+    flex-wrap: wrap;
+  }
+
+  .search {
+    flex: 1 1 100%;
+  }
+}
+
 @media (max-width: 420px) {
   .app {
     width: calc(100% - 20px);

@@ -7,7 +7,11 @@ import {
 } from './weather.js';
 import { updateRadar } from './radar.js';
 
-const $ = (id) => document.getElementById(id);
+// Elements are static in index.html, so treat lookups as non-null at call sites;
+// genuine nullables (querySelector, event targets, storage) stay guarded.
+const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
+// DOM events here always originate from elements; narrow target for .closest/etc.
+const evtEl = (e) => /** @type {HTMLElement} */ (e.target);
 const LS_LOC = 'weather.location';
 const LS_UNIT = 'weather.unit';
 const LS_DATA = 'weather.lastData';
@@ -16,10 +20,12 @@ const LS_ICON_SET = 'weather.iconSet';
 const LS_SAVED = 'weather.saved';
 const LS_SCHEME = 'weather.scheme';
 
-let unit = localStorage.getItem(LS_UNIT) || 'fahrenheit';
+/** @type {import('./weather.js').TemperatureUnit} */
+let unit = localStorage.getItem(LS_UNIT) === 'celsius' ? 'celsius' : 'fahrenheit';
 let iconSet = localStorage.getItem(LS_ICON_SET) || 'illustrated';
 const SCHEMES = ['auto', 'light', 'dark'];
-let scheme = SCHEMES.includes(localStorage.getItem(LS_SCHEME)) ? localStorage.getItem(LS_SCHEME) : 'auto';
+const storedScheme = localStorage.getItem(LS_SCHEME) || 'auto';
+let scheme = SCHEMES.includes(storedScheme) ? storedScheme : 'auto';
 let location_ = loadJSON(LS_LOC); // { name, lat, lon } | null
 let lastData = null;
 let lastUpdatedAt = null;
@@ -42,7 +48,7 @@ let selectedDayIso = null;            // ISO date of the day shown in the hourly
 let defaultDayHours = [];             // the original next-24h raw hours, for "Back"
 
 function loadJSON(key) {
-  try { return JSON.parse(localStorage.getItem(key)); }
+  try { return JSON.parse(localStorage.getItem(key) ?? 'null'); }
   catch { return null; }
 }
 
@@ -53,7 +59,7 @@ function setUnitLabel() {
 function setIconSetControl() {
   const active = ICON_SETS.has(iconSet) ? iconSet : 'illustrated';
   $('icon-set-label').textContent = ICON_SET_LABELS[active];
-  $('icon-set-menu').querySelectorAll('[role="option"]').forEach((option) => {
+  /** @type {NodeListOf<HTMLElement>} */ ($('icon-set-menu').querySelectorAll('[role="option"]')).forEach((option) => {
     const selected = option.dataset.iconSet === active;
     option.setAttribute('aria-selected', selected ? 'true' : 'false');
     option.classList.toggle('active', selected);
@@ -94,7 +100,7 @@ function applyScheme() {
 function setSchemeControl() {
   const btn = $('scheme-btn');
   if (!btn) return;
-  btn.querySelector('.scheme-glyph').textContent = SCHEME_GLYPHS[scheme];
+  /** @type {HTMLElement} */ (btn.querySelector('.scheme-glyph')).textContent = SCHEME_GLYPHS[scheme];
   const label = `Theme: ${SCHEME_LABELS[scheme]}`;
   btn.setAttribute('aria-label', label);
   btn.title = label;
@@ -226,7 +232,7 @@ function renderHero(cur, daily, name) {
   setTheme(d.theme);
   show('hero-shell');
   $('place-name').textContent = name;
-  $('hero-temp').textContent = Math.round(cur.temperature_2m);
+  $('hero-temp').textContent = String(Math.round(cur.temperature_2m));
   $('hero-icon-slot').innerHTML = weatherIconHtml(d.icon, 'hero-icon weather-icon');
   $('hero-condition').textContent = d.label;
   $('hero-feels').textContent = `Feels ${Math.round(cur.apparent_temperature)}°`;
@@ -527,7 +533,7 @@ function renderHourly(hours) {
   const m = METRICS[hourlyMetric] || METRICS.temp;
   const renderId = ++hourlyRenderId;
   strip.textContent = '';
-  strip.style.setProperty('--hour-count', Math.max(hours.length, 1));
+  strip.style.setProperty('--hour-count', String(Math.max(hours.length, 1)));
   const hasSub = typeof m.sub === 'function';
   strip.classList.toggle('show-sub', hasSub);
   const frag = document.createDocumentFragment();
@@ -561,7 +567,7 @@ function redrawHourlyGraph() {
 }
 
 function syncMetricToggle() {
-  document.querySelectorAll('#metric-toggle .seg-btn').forEach((btn) => {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('#metric-toggle .seg-btn')).forEach((btn) => {
     const on = btn.dataset.metric === hourlyMetric;
     btn.classList.toggle('active', on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -644,7 +650,7 @@ function renderTiles(cur, daily, firstHour) {
 // Air quality lives in its own tile; data arrives from a separate API call, so
 // it renders independently of renderTiles (which has only forecast data).
 function renderAirQuality(aq) {
-  const tile = $('t-aqi')?.closest('.tile');
+  const tile = /** @type {HTMLElement | null} */ ($('t-aqi')?.closest('.tile'));
   if (!tile) return;
   const hasAqi = Number.isFinite(aq.usAqi);
   $('t-aqi').textContent = hasAqi ? `${Math.round(aq.usAqi)} (${aqiCategory(aq.usAqi)})` : '—';
@@ -787,10 +793,11 @@ async function refresh() {
     persist(data);
     renderAll(data, location_.name, new Date());
   } catch (err) {
-    if (err.name === 'AbortError') return; // superseded by a newer request
+    const e = /** @type {Error} */ (err);
+    if (e.name === 'AbortError') return; // superseded by a newer request
     showStatus(lastData
       ? 'Could not refresh — showing last data.'
-      : `Could not load weather (${err.message}).`, true);
+      : `Could not load weather (${e.message}).`, true);
   }
   refreshAirQuality();
 }
@@ -859,7 +866,7 @@ function syncPinButton() {
   const label = on ? 'Remove saved location' : 'Save this location';
   btn.setAttribute('aria-label', label);
   btn.title = label;
-  btn.disabled = !location_;
+  /** @type {HTMLButtonElement} */ (btn).disabled = !location_;
 }
 
 function renderSavedBar() {
@@ -898,7 +905,7 @@ function syncDayNote() {
     note.hidden = true;
   }
   // Reflect selection on the day rows (today == default view).
-  document.querySelectorAll('#daily-list .day-row').forEach((row) => {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('#daily-list .day-row')).forEach((row) => {
     const iso = row.dataset.dayIso;
     const on = selectedDayIso ? iso === selectedDayIso
       : iso === lastData?.daily?.time?.[0];
@@ -958,7 +965,7 @@ function closeResults() {
 function selectPlace(i) {
   const p = currentPlaces[i];
   if (!p) return;
-  $('search-input').value = '';
+  /** @type {HTMLInputElement} */ ($('search-input')).value = '';
   closeResults();
   setLocation(p);
 }
@@ -1004,7 +1011,7 @@ async function doSearch(query) {
     list.replaceChildren(frag);
     openResults();
   } catch (err) {
-    if (err.name === 'AbortError') return; // a newer keystroke superseded this
+    if (/** @type {Error} */ (err).name === 'AbortError') return; // a newer keystroke superseded this
     currentPlaces = [];
     list.replaceChildren(mutedItem('Search failed — try again'));
     openResults();
@@ -1093,7 +1100,7 @@ function toggleIconSetMenu() {
 let searchDebounce;
 $('search-input').addEventListener('input', (e) => {
   clearTimeout(searchDebounce);
-  const q = e.target.value;
+  const q = /** @type {HTMLInputElement} */ (e.target).value;
   searchDebounce = setTimeout(() => doSearch(q), 250);
 });
 $('search-input').addEventListener('keydown', (e) => {
@@ -1101,7 +1108,7 @@ $('search-input').addEventListener('keydown', (e) => {
   switch (e.key) {
     case 'ArrowDown':
       e.preventDefault();
-      if (open) moveActive(1); else doSearch($('search-input').value);
+      if (open) moveActive(1); else doSearch(/** @type {HTMLInputElement} */ ($('search-input')).value);
       break;
     case 'ArrowUp':
       if (open) { e.preventDefault(); moveActive(-1); }
@@ -1117,19 +1124,19 @@ $('search-input').addEventListener('keydown', (e) => {
 $('geo-btn').addEventListener('click', useMyLocation);
 $('icon-set-btn').addEventListener('click', toggleIconSetMenu);
 $('icon-set-menu').addEventListener('click', (e) => {
-  const option = e.target.closest('[data-icon-set]');
+  const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-icon-set]'));
   if (option) setIconSet(option.dataset.iconSet);
 });
 $('icon-set-btn').addEventListener('keydown', (e) => {
   if (['ArrowDown', 'Enter', ' '].includes(e.key)) {
     e.preventDefault();
     openIconSetMenu();
-    $('icon-set-menu').querySelector('.active')?.focus();
+    /** @type {HTMLElement | null} */ ($('icon-set-menu').querySelector('.active'))?.focus();
   }
 });
 $('icon-set-menu').addEventListener('keydown', (e) => {
-  const options = [...$('icon-set-menu').querySelectorAll('[data-icon-set]')];
-  const current = options.indexOf(document.activeElement);
+  const options = /** @type {HTMLElement[]} */ ([...$('icon-set-menu').querySelectorAll('[data-icon-set]')]);
+  const current = options.indexOf(/** @type {HTMLElement} */ (document.activeElement));
   if (e.key === 'Escape') {
     closeIconSetMenu();
     $('icon-set-btn').focus();
@@ -1141,7 +1148,8 @@ $('icon-set-menu').addEventListener('keydown', (e) => {
     options[(current - 1 + options.length) % options.length].focus();
   } else if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault();
-    if (document.activeElement?.dataset.iconSet) setIconSet(document.activeElement.dataset.iconSet);
+    const active = /** @type {HTMLElement | null} */ (document.activeElement);
+    if (active?.dataset.iconSet) setIconSet(active.dataset.iconSet);
   }
 });
 $('unit-btn').addEventListener('click', toggleUnit);
@@ -1150,30 +1158,30 @@ $('pin-btn').addEventListener('click', toggleSaved);
 $('day-back-btn').addEventListener('click', restoreDefaultDay);
 $('refresh-btn').addEventListener('click', () => refresh());
 $('metric-toggle').addEventListener('click', (e) => {
-  const btn = e.target.closest('.seg-btn');
+  const btn = /** @type {HTMLElement | null} */ (evtEl(e).closest('.seg-btn'));
   if (btn) setMetric(btn.dataset.metric);
 });
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.search')) closeResults();
-  if (!e.target.closest('.icon-set-control')) closeIconSetMenu();
+  if (!evtEl(e).closest('.search')) closeResults();
+  if (!evtEl(e).closest('.icon-set-control')) closeIconSetMenu();
 });
 document.addEventListener('mouseover', (e) => {
-  const target = e.target.closest('[data-detail]');
+  const target = evtEl(e).closest('[data-detail]');
   if (target) showDetailTooltip(target);
 });
 document.addEventListener('mousemove', () => {
   if (detailTarget && !$('detail-tooltip').hidden) positionDetailTooltip(detailTarget);
 });
 document.addEventListener('mouseout', (e) => {
-  const target = e.target.closest('[data-detail]');
-  if (target && !target.contains(e.relatedTarget)) hideDetailTooltip(target);
+  const target = evtEl(e).closest('[data-detail]');
+  if (target && !target.contains(/** @type {Node | null} */ (e.relatedTarget))) hideDetailTooltip(target);
 });
 document.addEventListener('focusin', (e) => {
-  const target = e.target.closest('[data-detail]');
+  const target = evtEl(e).closest('[data-detail]');
   if (target) showDetailTooltip(target);
 });
 document.addEventListener('focusout', (e) => {
-  const target = e.target.closest('[data-detail]');
+  const target = evtEl(e).closest('[data-detail]');
   if (target) hideDetailTooltip(target);
 });
 document.addEventListener('visibilitychange', () => {

@@ -1,6 +1,148 @@
 // Pure, browser-agnostic weather helpers. No DOM/fetch here.
 
+// ---- Domain typedefs (JSDoc only; no runtime effect) ----
+
+/**
+ * WMO weather-code group keys used to pick icons/themes.
+ * @typedef {'clear'|'partly'|'cloudy'|'fog'|'drizzle'|'rain'|'snow'|'thunder'} WeatherGroup
+ */
+
+/**
+ * Result of describeWeather: a human label plus icon/theme keys.
+ * @typedef {object} WeatherDescription
+ * @property {string} label
+ * @property {string} icon
+ * @property {string} theme
+ */
+
+/**
+ * Temperature unit accepted across the helpers.
+ * @typedef {'celsius'|'fahrenheit'} TemperatureUnit
+ */
+
+/**
+ * Unit choices derived from the temperature unit.
+ * @typedef {object} UnitConfig
+ * @property {TemperatureUnit} temperatureUnit
+ * @property {'kmh'|'mph'} windSpeedUnit
+ * @property {'mm'|'inch'} precipitationUnit
+ * @property {string} windLabel
+ * @property {string} distanceLabel
+ * @property {(m: number) => number} distanceFrom
+ */
+
+/**
+ * Open-Meteo hourly block: parallel arrays indexed by hour. Some series are
+ * only present when requested; those are optional.
+ * @typedef {object} HourlyData
+ * @property {string[]} time
+ * @property {number[]} temperature_2m
+ * @property {number[]} weather_code
+ * @property {number[]} is_day
+ * @property {number[]} precipitation_probability
+ * @property {number[]} uv_index
+ * @property {number[]} visibility
+ * @property {number[]} [wind_speed_10m]
+ * @property {number[]} [relative_humidity_2m]
+ * @property {number[]} [apparent_temperature]
+ * @property {number[]} [dew_point_2m]
+ * @property {number[]} [wind_gusts_10m]
+ * @property {number[]} [cloud_cover]
+ */
+
+/**
+ * A single hour extracted from the hourly block. Fields whose source series is
+ * optional may be undefined.
+ * @typedef {object} HourSample
+ * @property {string} time
+ * @property {number} temp
+ * @property {number} code
+ * @property {number} isDay
+ * @property {number} precip
+ * @property {number} uv
+ * @property {number} visibility
+ * @property {number} [wind]
+ * @property {number} [humidity]
+ * @property {number} [feels]
+ * @property {number} [dew]
+ * @property {number} [gust]
+ * @property {number} [cloud]
+ */
+
+/**
+ * A grouped block summarizing a window of hours.
+ * @typedef {object} HourBlock
+ * @property {string} time
+ * @property {number} isDay
+ * @property {number} code
+ * @property {number} [temp]
+ * @property {number} [precip]
+ * @property {number} [wind]
+ * @property {number} [humidity]
+ * @property {number} [feels]
+ */
+
+/**
+ * A 2D point in the sparkline's pixel space.
+ * @typedef {object} Point
+ * @property {number} x
+ * @property {number} y
+ */
+
+/**
+ * Geometry for lineGraph.
+ * @typedef {object} GraphGeom
+ * @property {number} pitch
+ * @property {number} offsetX
+ * @property {number} height
+ * @property {number} padY
+ */
+
+/**
+ * Optional y-domain pin for lineGraph.
+ * @typedef {object} GraphDomain
+ * @property {number} [min]
+ * @property {number} [max]
+ */
+
+/**
+ * lineGraph output: SVG path data plus the raw points and resolved domain.
+ * @typedef {object} LineGraph
+ * @property {string} line
+ * @property {string} area
+ * @property {Point[]} points
+ * @property {number} min
+ * @property {number} max
+ */
+
+/**
+ * A geocoded place.
+ * @typedef {object} Place
+ * @property {string} name
+ * @property {number} lat
+ * @property {number} lon
+ */
+
+/**
+ * Parsed air-quality readings. Any field may be undefined when the source
+ * provides no value.
+ * @typedef {object} AirQuality
+ * @property {number} [usAqi]
+ * @property {number} [pm25]
+ * @property {number} [pm10]
+ * @property {number} [ozone]
+ * @property {number} [europeanAqi]
+ */
+
+/**
+ * A single minutely_15 precipitation sample.
+ * @typedef {object} MinutelySample
+ * @property {string} time
+ * @property {number} precip
+ */
+
 // code -> [label, group]
+/** @type {Record<number, [string, WeatherGroup]>} */
 export const CODE_TABLE = {
   0: ['Clear sky', 'clear'],
   1: ['Mainly clear', 'partly'],
@@ -32,6 +174,7 @@ export const CODE_TABLE = {
   99: ['Thunderstorm w/ heavy hail', 'thunder'],
 };
 
+/** @type {Record<WeatherGroup, (d: boolean) => string>} */
 const GROUP_ICON = {
   clear:   (d) => (d ? 'sun' : 'moon'),
   partly:  (d) => (d ? 'partly-day' : 'partly-night'),
@@ -43,6 +186,7 @@ const GROUP_ICON = {
   thunder: () => 'thunder',
 };
 
+/** @type {Record<WeatherGroup, (d: boolean) => string>} */
 const GROUP_THEME = {
   clear:   (d) => (d ? 'clear-day' : 'clear-night'),
   partly:  (d) => (d ? 'partly-day' : 'partly-night'),
@@ -54,6 +198,12 @@ const GROUP_THEME = {
   thunder: () => 'thunder',
 };
 
+/**
+ * Map a WMO code + day flag to a label, icon, and theme.
+ * @param {number} code
+ * @param {number|string|boolean} isDay
+ * @returns {WeatherDescription}
+ */
 export function describeWeather(code, isDay) {
   const day = !!Number(isDay);
   const entry = CODE_TABLE[code];
@@ -66,26 +216,48 @@ export function describeWeather(code, isDay) {
   };
 }
 
+/**
+ * Floor an ISO timestamp to the top of its hour (YYYY-MM-DDThh:00).
+ * @param {string} iso
+ * @returns {string}
+ */
 export function floorToHour(iso) {
   return iso.slice(0, 13) + ':00';
 }
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+/**
+ * Convert a wind bearing in degrees to an 8-point compass label.
+ * @param {number} deg
+ * @returns {string}
+ */
 export function degToCompass(deg) {
   const i = Math.round((((deg % 360) + 360) % 360) / 45) % 8;
   return COMPASS[i];
 }
 
+/**
+ * @param {number} m
+ * @returns {number}
+ */
 export function metersToMiles(m) {
   return Math.round((m / 1609.344) * 10) / 10;
 }
 
+/**
+ * @param {number} m
+ * @returns {number}
+ */
 export function metersToKm(m) {
   return Math.round((m / 1000) * 10) / 10;
 }
 
 // Single source of truth for unit choices, derived from the temperature unit.
 // Keeps wind/precip/distance consistent instead of mixing metric and imperial.
+/**
+ * @param {TemperatureUnit} temperatureUnit
+ * @returns {UnitConfig}
+ */
 export function unitConfig(temperatureUnit) {
   const metric = temperatureUnit === 'celsius';
   return {
@@ -98,6 +270,15 @@ export function unitConfig(temperatureUnit) {
   };
 }
 
+/**
+ * Position a day's temperature range within the week's overall range, as
+ * percentages for a CSS bar.
+ * @param {number} min
+ * @param {number} max
+ * @param {number} weekMin
+ * @param {number} weekMax
+ * @returns {{ left: number, width: number }}
+ */
 export function rangeBar(min, max, weekMin, weekMax) {
   const span = weekMax - weekMin;
   if (span <= 0) return { left: 0, width: 100 };
@@ -110,6 +291,12 @@ export function rangeBar(min, max, weekMin, weekMax) {
 // wind, ...). geom: { pitch, offsetX, height, padY }. domain optionally pins
 // min/max (e.g. precip 0..100); otherwise the data's own range is used.
 // Returns smooth line + filled area paths plus the raw points.
+/**
+ * @param {number[]} values
+ * @param {GraphGeom} geom
+ * @param {GraphDomain} [domain]
+ * @returns {LineGraph}
+ */
 export function lineGraph(values, geom, domain = {}) {
   const { pitch, offsetX, height, padY } = geom;
   // Skip missing/non-numeric values (API gaps) but keep x tied to the original
@@ -123,6 +310,7 @@ export function lineGraph(values, geom, domain = {}) {
   const max = domain.max ?? Math.max(...ts);
   const span = max - min || 1; // avoid divide-by-zero on a flat series
   const usable = height - 2 * padY;
+  /** @param {number} v */
   const r = (v) => Math.round(v * 100) / 100;
   const points = valid.map(({ t, i }) => {
     const f = Math.min(1, Math.max(0, (t - min) / span)); // clamp into domain
@@ -135,9 +323,14 @@ export function lineGraph(values, geom, domain = {}) {
 }
 
 // Catmull-Rom -> cubic Bezier for a smooth curve through every point.
+/**
+ * @param {Point[]} pts
+ * @returns {string}
+ */
 function smoothPath(pts) {
   if (!pts.length) return '';
   if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
+  /** @param {number} v */
   const r = (v) => Math.round(v * 100) / 100;
   let d = `M ${pts[0].x} ${pts[0].y}`;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -154,6 +347,12 @@ function smoothPath(pts) {
   return d;
 }
 
+/**
+ * Extract up to 24 hours starting at the current hour.
+ * @param {HourlyData} hourly
+ * @param {string} currentIso
+ * @returns {HourSample[]}
+ */
 export function sliceNext24(hourly, currentIso) {
   const target = floorToHour(currentIso);
   let start = hourly.time.indexOf(target);
@@ -183,17 +382,31 @@ export function sliceNext24(hourly, currentIso) {
 // Aggregate hourly entries into fixed-size blocks (e.g. 3-hourly). Each block
 // summarizes its window so nothing between samples is lost: average temp,
 // max precip/wind, and the most significant condition (highest WMO code).
+/**
+ * Aggregate hourly samples into fixed-size blocks.
+ * @param {HourSample[]} hours
+ * @param {number} [size]
+ * @returns {HourBlock[]}
+ */
 export function groupHours(hours, size = 3) {
+  /** @param {number[]} xs */
   const avg = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  /**
+   * Keep only finite numbers, narrowing out undefined gaps.
+   * @param {(number|undefined)[]} xs
+   * @returns {number[]}
+   */
+  const finite = (xs) => xs.filter(
+    /** @returns {x is number} */ (x) => Number.isFinite(x));
   const blocks = [];
   for (let i = 0; i < hours.length; i += size) {
     const chunk = hours.slice(i, i + size);
-    const temps = chunk.map((h) => h.temp).filter(Number.isFinite);
-    const precs = chunk.map((h) => h.precip).filter(Number.isFinite);
-    const winds = chunk.map((h) => h.wind).filter(Number.isFinite);
-    const hums = chunk.map((h) => h.humidity).filter(Number.isFinite);
-    const feelses = chunk.map((h) => h.feels).filter(Number.isFinite);
-    const codes = chunk.map((h) => h.code).filter(Number.isFinite);
+    const temps = finite(chunk.map((h) => h.temp));
+    const precs = finite(chunk.map((h) => h.precip));
+    const winds = finite(chunk.map((h) => h.wind));
+    const hums = finite(chunk.map((h) => h.humidity));
+    const feelses = finite(chunk.map((h) => h.feels));
+    const codes = finite(chunk.map((h) => h.code));
     blocks.push({
       time: chunk[0].time,
       isDay: chunk[0].isDay,
@@ -226,11 +439,17 @@ const DAILY = [
   'precipitation_probability_max', 'sunrise', 'sunset', 'uv_index_max',
 ].join(',');
 
+/**
+ * @param {number} lat
+ * @param {number} lon
+ * @param {TemperatureUnit} unit
+ * @returns {string}
+ */
 export function forecastUrl(lat, lon, unit) {
   const u = unitConfig(unit);
   const p = new URLSearchParams({
-    latitude: lat,
-    longitude: lon,
+    latitude: String(lat),
+    longitude: String(lon),
     current: CURRENT,
     hourly: HOURLY,
     daily: DAILY,
@@ -244,42 +463,68 @@ export function forecastUrl(lat, lon, unit) {
   return `https://api.open-meteo.com/v1/forecast?${p.toString()}`;
 }
 
+/**
+ * @param {string} query
+ * @returns {string}
+ */
 export function geocodeUrl(query) {
   const p = new URLSearchParams({
-    name: query, count: 5, language: 'en', format: 'json',
+    name: query, count: '5', language: 'en', format: 'json',
   });
   return `https://geocoding-api.open-meteo.com/v1/search?${p.toString()}`;
 }
 
+/**
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {string}
+ */
 export function reverseGeocodeUrl(lat, lon) {
   const p = new URLSearchParams({
-    latitude: lat, longitude: lon, localityLanguage: 'en',
+    latitude: String(lat), longitude: String(lon), localityLanguage: 'en',
   });
   return `https://api.bigdatacloud.net/data/reverse-geocode-client?${p.toString()}`;
 }
 
 // A location lives in the URL as ?q=<name>&lat=<n>&lon=<n> so it can be
 // bookmarked/shared. Coords are authoritative on load; q is just readable.
+/**
+ * Parse a location from a URL query string, or null if coords are missing/invalid.
+ * @param {string} search
+ * @returns {Place | null}
+ */
 export function parseLocationParams(search) {
   const p = new URLSearchParams(search);
-  const lat = parseFloat(p.get('lat'));
-  const lon = parseFloat(p.get('lon'));
+  const lat = parseFloat(p.get('lat') ?? '');
+  const lon = parseFloat(p.get('lon') ?? '');
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   return { name: p.get('q') || 'Pinned location', lat, lon };
 }
 
+/**
+ * Serialize a location into a URL query string.
+ * @param {Place} loc
+ * @returns {string}
+ */
 export function locationQuery(loc) {
+  /** @param {number} n */
   const round = (n) => Math.round(n * 1e4) / 1e4; // ~11m precision, tidy URLs
   const p = new URLSearchParams();
   p.set('q', loc.name);
-  p.set('lat', round(loc.lat));
-  p.set('lon', round(loc.lon));
+  p.set('lat', String(round(loc.lat)));
+  p.set('lon', String(round(loc.lon)));
   return p.toString();
 }
 
+/**
+ * Map a geocoding API response to Place objects.
+ * @param {any} json
+ * @returns {Place[]}
+ */
 export function parsePlaces(json) {
+  /** @type {any[]} */
   const results = (json && json.results) || [];
-  return results.map((r) => ({
+  return results.map((/** @type {any} */ r) => ({
     name: [r.name, r.admin1, r.country].filter(Boolean).join(', '),
     lat: r.latitude,
     lon: r.longitude,
@@ -287,16 +532,26 @@ export function parsePlaces(json) {
 }
 
 // Open-Meteo air-quality API lives on a separate host from the forecast API.
+/**
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {string}
+ */
 export function airQualityUrl(lat, lon) {
   const p = new URLSearchParams({
-    latitude: lat,
-    longitude: lon,
+    latitude: String(lat),
+    longitude: String(lon),
     current: 'us_aqi,pm2_5,pm10,ozone,european_aqi',
     timezone: 'auto',
   });
   return `https://air-quality-api.open-meteo.com/v1/air-quality?${p.toString()}`;
 }
 
+/**
+ * Map an air-quality API response to a flat AirQuality object.
+ * @param {any} json
+ * @returns {AirQuality}
+ */
 export function parseAirQuality(json) {
   const c = (json && json.current) || {};
   return {
@@ -309,8 +564,13 @@ export function parseAirQuality(json) {
 }
 
 // US AQI breakpoints (EPA): map an index value to its health category.
+/**
+ * Map a US AQI value to its EPA health category.
+ * @param {number|undefined} usAqi
+ * @returns {string}
+ */
 export function aqiCategory(usAqi) {
-  if (!Number.isFinite(usAqi)) return 'Unknown';
+  if (typeof usAqi !== 'number' || !Number.isFinite(usAqi)) return 'Unknown';
   if (usAqi <= 50) return 'Good';
   if (usAqi <= 100) return 'Moderate';
   if (usAqi <= 150) return 'Unhealthy for sensitive';
@@ -321,6 +581,12 @@ export function aqiCategory(usAqi) {
 
 // Like sliceNext24 but pulls every hour belonging to one calendar day (by ISO
 // date prefix), so the graph can show a specific future/past day in full.
+/**
+ * Extract every hour whose ISO timestamp begins with the given date prefix.
+ * @param {HourlyData} hourly
+ * @param {string} dateIso
+ * @returns {HourSample[]}
+ */
 export function sliceDayHours(hourly, dateIso) {
   const out = [];
   for (let i = 0; i < hourly.time.length; i++) {
@@ -346,6 +612,12 @@ export function sliceDayHours(hourly, dateIso) {
 
 // Minutely_15 precipitation nowcast: keep samples at/after the current time,
 // capped to the next 12h (48 quarter-hours).
+/**
+ * Extract minutely_15 precipitation samples at/after the current time, capped
+ * at the next 12 h (48 quarter-hours).
+ * @param {any} data
+ * @returns {MinutelySample[]}
+ */
 export function parseMinutely(data) {
   const m = (data && data.minutely_15) || {};
   const times = m.time || [];
@@ -361,6 +633,11 @@ export function parseMinutely(data) {
 }
 
 // Turn nowcast samples into a one-line human summary. Pure: no formatting libs.
+/**
+ * Turn nowcast samples into a one-line human summary.
+ * @param {MinutelySample[]} samples
+ * @returns {string}
+ */
 export function nowcastText(samples) {
   const list = samples || [];
   const finite = list.filter((s) => Number.isFinite(s.precip));
