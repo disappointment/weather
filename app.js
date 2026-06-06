@@ -69,6 +69,7 @@ function show(id) { $(id).hidden = false; }
 function renderHero(cur, daily, name) {
   const d = describeWeather(cur.weather_code, cur.is_day);
   setTheme(d.theme);
+  show('hero-shell');
   $('place-name').textContent = name;
   $('hero-temp').textContent = Math.round(cur.temperature_2m);
   $('hero-icon-use').closest('svg').dataset.icon = d.icon;
@@ -252,7 +253,12 @@ function hydrateFromCache() {
 }
 
 async function refresh() {
-  if (!location_) { $('empty').hidden = false; return; }
+  if (!location_) {
+    $('hero').hidden = true;
+    $('hero-shell').hidden = true;
+    $('empty').hidden = false;
+    return;
+  }
   forecastController?.abort();
   forecastController = new AbortController();
   const { signal } = forecastController;
@@ -452,8 +458,13 @@ refresh();
 refreshTimer = setInterval(refresh, 15 * 60 * 1000);
 
 // ---- Service worker (offline app shell) ----
-if ('serviceWorker' in navigator) {
+const isLocalPreview = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+if ('serviceWorker' in navigator && !isLocalPreview) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is best-effort */ });
   });
+} else if ('serviceWorker' in navigator && isLocalPreview) {
+  navigator.serviceWorker.getRegistrations()
+    .then((regs) => Promise.all(regs.map((reg) => reg.unregister())))
+    .catch(() => { /* local preview should not keep stale SW state around */ });
 }

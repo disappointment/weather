@@ -5,6 +5,11 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4173 --strictPort",
+    "preview": "vite --host 127.0.0.1 --port 4173 --strictPort",
     "test": "node --test"
+  },
+  "devDependencies": {
+    "vite": "^8.0.16"
   }
 }
