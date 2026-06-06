@@ -409,15 +409,12 @@ function renderHourlyGraph(strip, hours, metric, renderId) {
     });
     const pitch = (centers[1] - centers[0]) / 3; // px per hour (cells are 3-hourly)
     const xOf = (i) => centers[0] + i * pitch;
-    const lastRect = cells[cells.length - 1].getBoundingClientRect();
-    const style = getComputedStyle(strip);
-    const padLeft = parseFloat(style.paddingLeft) || 0;
-    const contentWidth = Math.max(
-      strip.clientWidth,
-      lastRect.right - stripRect.left + padLeft,
-      xOf(hours.length - 1) + 6,
-    );
-    strip.insertAdjacentHTML('afterbegin', metricGraphSvg(hours, metric, Math.ceil(contentWidth), xOf));
+    // Keep the curve within the cells' span so the SVG never widens the
+    // scroll area. scrollWidth here is the cells-only extent (graph not yet in).
+    const maxIndex = (cells.length - 1) * 3;
+    const series = hours.slice(0, maxIndex + 1);
+    const contentWidth = Math.max(strip.clientWidth, strip.scrollWidth);
+    strip.insertAdjacentHTML('afterbegin', metricGraphSvg(series, metric, contentWidth, xOf));
   });
 }
 

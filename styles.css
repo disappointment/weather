@@ -245,9 +245,8 @@ button {
   padding: 4px;
   border: 1px solid var(--card-border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--card-strong), transparent 4%);
+  background: #fbfdff;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px) saturate(1.08);
 }
 
 .results li {
