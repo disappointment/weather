@@ -677,7 +677,8 @@ button {
 .hero-copy {
   min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 7px;
+  align-content: center;
 }
 
 .place {
@@ -786,6 +787,7 @@ button {
 
 .refresh {
   justify-self: start;
+  margin-top: 4px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
