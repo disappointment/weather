@@ -478,12 +478,30 @@ const DAILY = [
 ].join(',');
 
 /**
+ * Open-Meteo weather models the user can pick between. `best_match` is
+ * Open-Meteo's blended default (and the API default, so it's left off the
+ * URL); the rest pin the forecast to a single model, which changes how
+ * conditions like thunderstorms get coded.
+ * @type {{ value: string, label: string }[]}
+ */
+export const FORECAST_MODELS = [
+  { value: 'best_match', label: 'Best match' },
+  { value: 'ecmwf_ifs025', label: 'ECMWF' },
+  { value: 'icon_seamless', label: 'ICON (DWD)' },
+  { value: 'gfs_seamless', label: 'GFS (NOAA)' },
+  { value: 'meteofrance_seamless', label: 'Météo-France' },
+  { value: 'gem_seamless', label: 'GEM (Canada)' },
+  { value: 'jma_seamless', label: 'JMA (Japan)' },
+];
+
+/**
  * @param {number} lat
  * @param {number} lon
  * @param {TemperatureUnit} unit
+ * @param {string} [model] one of FORECAST_MODELS' values; unknown/default skipped
  * @returns {string}
  */
-export function forecastUrl(lat, lon, unit) {
+export function forecastUrl(lat, lon, unit, model) {
   const u = unitConfig(unit);
   const p = new URLSearchParams({
     latitude: String(lat),
@@ -498,6 +516,11 @@ export function forecastUrl(lat, lon, unit) {
     precipitation_unit: u.precipitationUnit,
     timezone: 'auto',
   });
+  // best_match is the API default; only pin `models` for an explicit choice so
+  // the URL (and Open-Meteo's cache key) stays clean for the common case.
+  if (model && model !== 'best_match' && FORECAST_MODELS.some((m) => m.value === model)) {
+    p.set('models', model);
+  }
   return `https://api.open-meteo.com/v1/forecast?${p.toString()}`;
 }
 
