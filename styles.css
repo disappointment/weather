@@ -1485,17 +1485,17 @@ button {
   }
 
   .hero-icon {
-    width: clamp(48px, 10.8cqi, 76px);
-    height: clamp(48px, 10.8cqi, 76px);
+    width: clamp(58px, 13.5cqi, 84px);
+    height: clamp(58px, 13.5cqi, 84px);
     padding: 8px;
   }
 
   .hero-icon.weather-emoji {
-    font-size: clamp(44px, 9.7cqi, 66px);
+    font-size: clamp(50px, 11.9cqi, 72px);
   }
 
   .hero-icon.weather-line {
-    font-size: clamp(50px, 10.8cqi, 74px);
+    font-size: clamp(56px, 13.1cqi, 80px);
   }
 
   .temp {
