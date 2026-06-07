@@ -142,7 +142,7 @@ let defaultDayHours = [];             // the original next-24h raw hours, for "B
 /** @type {number | null} */
 let draggedSavedIndex = null;
 let suppressSavedClick = false;
-/** @type {{ chip: HTMLElement, fromIndex: number, startX: number, pointerId: number, dragging: boolean } | null} */
+/** @type {{ chip: HTMLElement, fromIndex: number, startX: number, startY: number, pointerId: number, dragging: boolean } | null} */
 let savedDrag = null;
 
 /** @param {string} key */
@@ -1301,10 +1301,15 @@ function reorderSaved(from, to) {
 // before/after insertion marker; on release we compute the target slot.
 const SAVED_DRAG_THRESHOLD = 6; // px of travel before a press becomes a drag
 
-/** @param {number} x @param {number} y @returns {HTMLElement | null} */
-function chipAtPoint(x, y) {
-  const el = document.elementFromPoint(x, y);
-  return el ? /** @type {HTMLElement | null} */ (el.closest('.saved-chip')) : null;
+// Topmost saved chip at a point, skipping `exclude` (the chip being dragged —
+// it follows the pointer, so it would otherwise sit right under the cursor).
+/** @param {number} x @param {number} y @param {HTMLElement} [exclude] @returns {HTMLElement | null} */
+function chipAtPoint(x, y, exclude) {
+  for (const el of document.elementsFromPoint(x, y)) {
+    const chip = /** @type {HTMLElement | null} */ (el.closest?.('.saved-chip'));
+    if (chip && chip !== exclude) return chip;
+  }
+  return null;
 }
 
 function clearSavedDragOver() {
@@ -1318,7 +1323,7 @@ function handleSavedPointerDown(e) {
   if (e.pointerType === 'mouse' && e.button !== 0) return; // left button only
   const chip = /** @type {HTMLElement | null} */ (evtEl(e).closest('.saved-chip'));
   if (!chip || saved.length < 2) return; // nothing to reorder
-  savedDrag = { chip, fromIndex: savedIndexFromChip(chip), startX: e.clientX, pointerId: e.pointerId, dragging: false };
+  savedDrag = { chip, fromIndex: savedIndexFromChip(chip), startX: e.clientX, startY: e.clientY, pointerId: e.pointerId, dragging: false };
   window.addEventListener('pointermove', handleSavedPointerMove);
   window.addEventListener('pointerup', handleSavedPointerUp);
   window.addEventListener('pointercancel', handleSavedPointerUp);
@@ -1327,8 +1332,10 @@ function handleSavedPointerDown(e) {
 /** @param {PointerEvent} e */
 function handleSavedPointerMove(e) {
   if (!savedDrag || e.pointerId !== savedDrag.pointerId) return;
+  const dx = e.clientX - savedDrag.startX;
+  const dy = e.clientY - savedDrag.startY;
   if (!savedDrag.dragging) {
-    if (Math.abs(e.clientX - savedDrag.startX) < SAVED_DRAG_THRESHOLD) return;
+    if (Math.hypot(dx, dy) < SAVED_DRAG_THRESHOLD) return;
     // Promote to a drag.
     savedDrag.dragging = true;
     draggedSavedIndex = savedDrag.fromIndex;
@@ -1336,9 +1343,11 @@ function handleSavedPointerMove(e) {
     savedDrag.chip.setAttribute('aria-grabbed', 'true');
   }
   e.preventDefault();
+  // Lift the chip and let it track the pointer so the drag is visibly happening.
+  savedDrag.chip.style.transform = `translate(${dx}px, ${dy}px) scale(1.04)`;
   clearSavedDragOver();
-  const over = chipAtPoint(e.clientX, e.clientY);
-  if (over && over !== savedDrag.chip) {
+  const over = chipAtPoint(e.clientX, e.clientY, savedDrag.chip);
+  if (over) {
     const rect = over.getBoundingClientRect();
     const after = e.clientX > rect.left + rect.width / 2;
     over.classList.toggle('drag-over-before', !after);
@@ -1356,7 +1365,7 @@ function handleSavedPointerUp(e) {
   savedDrag = null;
   draggedSavedIndex = null;
   if (!drag.dragging) return; // never moved → leave the click to select the place
-  const over = e.type === 'pointercancel' ? null : chipAtPoint(e.clientX, e.clientY);
+  const over = e.type === 'pointercancel' ? null : chipAtPoint(e.clientX, e.clientY, drag.chip);
   if (over) {
     let to = savedIndexFromChip(over);
     const rect = over.getBoundingClientRect();
@@ -1368,6 +1377,7 @@ function handleSavedPointerUp(e) {
   // doesn't also navigate. Reset shortly after in case no click follows.
   suppressSavedClick = true;
   window.setTimeout(() => { suppressSavedClick = false; }, 0);
+  drag.chip.style.transform = ''; // drop the follow-transform (no-op if re-rendered)
   clearSavedDragClasses();
 }
 

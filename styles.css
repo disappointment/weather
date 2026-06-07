@@ -516,9 +516,15 @@ button {
 }
 
 .saved-chip.dragging {
-  opacity: 0.48;
-  transform: scale(0.98);
+  position: relative;
+  z-index: 10;
+  opacity: 0.92;
   cursor: grabbing;
+  /* The chip follows the pointer (transform set inline). Lift it above siblings,
+     let elementFromPoint see the chip underneath, and don't lag via transition. */
+  pointer-events: none;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+  transition: none;
 }
 
 .saved-chip.drag-over-before,
@@ -1444,18 +1450,22 @@ button {
     gap: 9px;
   }
 
+  /* Hero type scales with the hero CARD (container units), not the viewport.
+     .app caps at 1040px, so on wide screens the card is only ~556px even though
+     the viewport is huge; vw-based sizes were far too big for the card and forced
+     the place/condition/temp to wrap. cqi tracks the card so they fit. */
   .place {
     max-width: 520px;
-    font-size: clamp(17px, 2vw, 24px);
+    font-size: clamp(16px, 3.6cqi, 24px);
   }
 
   .condition {
     max-width: 560px;
-    font-size: clamp(40px, 4.6vw, 58px);
+    font-size: clamp(32px, 7.2cqi, 52px);
   }
 
   .hilo {
-    font-size: clamp(16px, 1.7vw, 20px);
+    font-size: clamp(14px, 2.9cqi, 19px);
   }
 
   .refresh {
@@ -1471,25 +1481,25 @@ button {
 
   .now {
     align-self: center;
-    gap: clamp(14px, 2.4vw, 22px);
+    gap: clamp(10px, 2.2cqi, 22px);
   }
 
   .hero-icon {
-    width: clamp(58px, 6.8vw, 76px);
-    height: clamp(58px, 6.8vw, 76px);
+    width: clamp(48px, 10.8cqi, 76px);
+    height: clamp(48px, 10.8cqi, 76px);
     padding: 8px;
   }
 
   .hero-icon.weather-emoji {
-    font-size: clamp(50px, 6vw, 66px);
+    font-size: clamp(44px, 9.7cqi, 66px);
   }
 
   .hero-icon.weather-line {
-    font-size: clamp(58px, 6.8vw, 74px);
+    font-size: clamp(50px, 10.8cqi, 74px);
   }
 
   .temp {
-    font-size: clamp(78px, 8.2vw, 106px);
+    font-size: clamp(64px, 15cqi, 104px);
   }
 
   .hero-extra {
