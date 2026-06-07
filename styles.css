@@ -367,7 +367,8 @@ button {
   font-weight: 750;
 }
 
-.icon-set-control {
+.icon-set-control,
+.model-control {
   position: relative;
   flex: 0 0 auto;
 }

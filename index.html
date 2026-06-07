@@ -89,6 +89,16 @@
           <button type="button" role="option" data-icon-set="mono">Mono</button>
         </div>
       </div>
+      <div class="model-control">
+        <button id="model-btn" class="icon-set-btn" type="button"
+                aria-haspopup="listbox" aria-expanded="false"
+                aria-controls="model-menu" title="Forecast model">
+          <span class="sr-only">Forecast model</span>
+          <span id="model-label">Best match</span>
+        </button>
+        <div id="model-menu" class="icon-set-menu" role="listbox"
+             aria-label="Forecast model" hidden></div>
+      </div>
       <button id="scheme-btn" class="icon-btn scheme-btn" type="button"
               aria-label="Theme: Auto" title="Theme: Auto">
         <span class="scheme-glyph" aria-hidden="true">◐</span>

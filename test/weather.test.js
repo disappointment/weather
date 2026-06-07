@@ -237,6 +237,13 @@ test('forecastUrl includes coords, unit, and blocks', () => {
   assert.match(u, /uv_index/);
 });
 
+test('forecastUrl pins an explicit model but skips the default/unknown', () => {
+  assert.match(forecastUrl(47.6, -122.3, 'fahrenheit', 'ecmwf_ifs025'), /models=ecmwf_ifs025/);
+  assert.doesNotMatch(forecastUrl(47.6, -122.3, 'fahrenheit', 'best_match'), /models=/);
+  assert.doesNotMatch(forecastUrl(47.6, -122.3, 'fahrenheit', 'not_a_model'), /models=/);
+  assert.doesNotMatch(forecastUrl(47.6, -122.3, 'fahrenheit'), /models=/);
+});
+
 test('geocodeUrl encodes the query', () => {
   assert.match(geocodeUrl('San Juan'), /name=San(\+|%20)Juan/);
   assert.match(geocodeUrl('x'), /count=5/);

@@ -1,6 +1,6 @@
 import {
   describeWeather, sliceNext24, sliceDayHours, groupHours, degToCompass, unitConfig,
-  rangeBar, forecastUrl, geocodeUrl, reverseGeocodeUrl, parsePlaces,
+  rangeBar, forecastUrl, FORECAST_MODELS, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
   airQualityUrl, parseAirQuality, aqiCategory, pollenSummary,
   goldenHour, moonPhase, daylightProgress, formatDuration,
@@ -88,10 +88,14 @@ const LS_METRIC = 'weather.metric';
 const LS_ICON_SET = 'weather.iconSet';
 const LS_SAVED = 'weather.saved';
 const LS_SCHEME = 'weather.scheme';
+const LS_MODEL = 'weather.model';
 
 /** @type {import('./weather.js').TemperatureUnit} */
 let unit = localStorage.getItem(LS_UNIT) === 'celsius' ? 'celsius' : 'fahrenheit';
 let iconSet = localStorage.getItem(LS_ICON_SET) || 'illustrated';
+const MODEL_VALUES = new Set(FORECAST_MODELS.map((m) => m.value));
+const storedModel = localStorage.getItem(LS_MODEL);
+let model = storedModel && MODEL_VALUES.has(storedModel) ? storedModel : 'best_match';
 const SCHEMES = ['auto', 'light', 'dark'];
 const storedScheme = localStorage.getItem(LS_SCHEME) || 'auto';
 let scheme = SCHEMES.includes(storedScheme) ? storedScheme : 'auto';
@@ -144,6 +148,31 @@ function setIconSetControl() {
   $('icon-set-label').textContent = /** @type {Record<string, string>} */ (ICON_SET_LABELS)[active];
   /** @type {NodeListOf<HTMLElement>} */ ($('icon-set-menu').querySelectorAll('[role="option"]')).forEach((option) => {
     const selected = option.dataset.iconSet === active;
+    option.setAttribute('aria-selected', selected ? 'true' : 'false');
+    option.classList.toggle('active', selected);
+  });
+}
+
+// The model menu is data-driven from FORECAST_MODELS so the list lives in one
+// place (weather.js, where forecastUrl validates against it).
+function populateModelMenu() {
+  const frag = document.createDocumentFragment();
+  FORECAST_MODELS.forEach((m) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'option');
+    btn.dataset.model = m.value;
+    btn.textContent = m.label;
+    frag.appendChild(btn);
+  });
+  $('model-menu').replaceChildren(frag);
+}
+
+function setModelControl() {
+  const active = MODEL_VALUES.has(model) ? model : 'best_match';
+  $('model-label').textContent = FORECAST_MODELS.find((m) => m.value === active)?.label || 'Best match';
+  /** @type {NodeListOf<HTMLElement>} */ ($('model-menu').querySelectorAll('[role="option"]')).forEach((option) => {
+    const selected = option.dataset.model === active;
     option.setAttribute('aria-selected', selected ? 'true' : 'false');
     option.classList.toggle('active', selected);
   });
@@ -1057,7 +1086,7 @@ async function refresh() {
   const { signal } = forecastController;
   try {
     if (!lastData) showStatus('Loading…');
-    const res = await fetch(forecastUrl(location_.lat, location_.lon, unit), { signal });
+    const res = await fetch(forecastUrl(location_.lat, location_.lon, unit, model), { signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     lastData = data;
@@ -1380,6 +1409,31 @@ function toggleIconSetMenu() {
   else closeIconSetMenu();
 }
 
+/** @param {string | undefined} next */
+function setModel(next) {
+  if (!next || !MODEL_VALUES.has(next)) return;
+  model = next;
+  localStorage.setItem(LS_MODEL, model);
+  setModelControl();
+  closeModelMenu();
+  refresh(); // a different model is a different data source, so re-fetch
+}
+
+function openModelMenu() {
+  $('model-menu').hidden = false;
+  $('model-btn').setAttribute('aria-expanded', 'true');
+}
+
+function closeModelMenu() {
+  $('model-menu').hidden = true;
+  $('model-btn').setAttribute('aria-expanded', 'false');
+}
+
+function toggleModelMenu() {
+  if ($('model-menu').hidden) openModelMenu();
+  else closeModelMenu();
+}
+
 // ---- Events & init ----
 
 /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -1438,6 +1492,36 @@ $('icon-set-menu').addEventListener('keydown', (e) => {
     if (active?.dataset.iconSet) setIconSet(active.dataset.iconSet);
   }
 });
+$('model-btn').addEventListener('click', toggleModelMenu);
+$('model-menu').addEventListener('click', (e) => {
+  const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-model]'));
+  if (option) setModel(option.dataset.model);
+});
+$('model-btn').addEventListener('keydown', (e) => {
+  if (['ArrowDown', 'Enter', ' '].includes(e.key)) {
+    e.preventDefault();
+    openModelMenu();
+    /** @type {HTMLElement | null} */ ($('model-menu').querySelector('.active'))?.focus();
+  }
+});
+$('model-menu').addEventListener('keydown', (e) => {
+  const options = /** @type {HTMLElement[]} */ ([...$('model-menu').querySelectorAll('[data-model]')]);
+  const current = options.indexOf(/** @type {HTMLElement} */ (document.activeElement));
+  if (e.key === 'Escape') {
+    closeModelMenu();
+    $('model-btn').focus();
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    options[(current + 1) % options.length].focus();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    options[(current - 1 + options.length) % options.length].focus();
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    const active = /** @type {HTMLElement | null} */ (document.activeElement);
+    if (active?.dataset.model) setModel(active.dataset.model);
+  }
+});
 $('unit-btn').addEventListener('click', toggleUnit);
 $('scheme-btn').addEventListener('click', cycleScheme);
 $('pin-btn').addEventListener('click', toggleSaved);
@@ -1450,6 +1534,7 @@ $('metric-toggle').addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (!evtEl(e).closest('.search')) closeResults();
   if (!evtEl(e).closest('.icon-set-control')) closeIconSetMenu();
+  if (!evtEl(e).closest('.model-control')) closeModelMenu();
 });
 document.addEventListener('mouseover', (e) => {
   const target = evtEl(e).closest('[data-detail]');
@@ -1489,6 +1574,8 @@ setUnitLabel();
 setSchemeControl();
 applyScheme();
 setIconSetControl();
+populateModelMenu();
+setModelControl();
 syncMetricToggle();
 renderSavedBar();
 syncPinButton();
