@@ -85,6 +85,7 @@ const LS_LOC = 'weather.location';
 const LS_UNIT = 'weather.unit';
 const LS_DATA = 'weather.lastData';
 const LS_METRIC = 'weather.metric';
+const LS_RESOLUTION = 'weather.resolution';
 const LS_ICON_SET = 'weather.iconSet';
 const LS_SAVED = 'weather.saved';
 const LS_SCHEME = 'weather.scheme';
@@ -110,6 +111,12 @@ let lastHours = [];               // 3-hour blocks, kept for cell re-renders
 /** @type {HourSample[]} */
 let lastHourlyRaw = [];           // raw hourly samples, kept for the graph curve
 let hourlyMetric = localStorage.getItem(LS_METRIC) || 'temp';
+// Block size for the hourly strip: 1 (hourly), 3 (default), or 6 (6-hourly).
+const HOURLY_RESOLUTIONS = [1, 3, 6];
+let hourlyResolution = (() => {
+  const stored = Number(localStorage.getItem(LS_RESOLUTION));
+  return HOURLY_RESOLUTIONS.includes(stored) ? stored : 3;
+})();
 /** @type {ReturnType<typeof setInterval> | null} */
 let refreshTimer = null;
 /** @type {AbortController | null} */
@@ -132,6 +139,11 @@ let saved = loadJSON(LS_SAVED) || []; // [{ name, lat, lon }]
 let selectedDayIso = null;            // ISO date of the day shown in the hourly graph, or null for next-24h
 /** @type {HourSample[]} */
 let defaultDayHours = [];             // the original next-24h raw hours, for "Back"
+/** @type {number | null} */
+let draggedSavedIndex = null;
+let suppressSavedClick = false;
+/** @type {{ chip: HTMLElement, fromIndex: number, startX: number, pointerId: number, dragging: boolean } | null} */
+let savedDrag = null;
 
 /** @param {string} key */
 function loadJSON(key) {
@@ -755,8 +767,8 @@ function metricGraphSvg(hours, metric, width, xOf, labelEvery = 3) {
     </svg>`;
 }
 
-// hours here are the raw hourly samples. Cells sit at every 3rd hour, so we read
-// their centers and interpolate a per-hour pitch to place a dot on each hour.
+// hours here are the raw hourly samples. Cells sit every `hourlyResolution` hours,
+// so we read their centers and interpolate a per-hour pitch to place a dot on each hour.
 /**
  * @param {HTMLElement} strip
  * @param {HourSample[]} hours
@@ -775,12 +787,12 @@ function renderHourlyGraph(strip, hours, metric, renderId) {
       const rect = cell.getBoundingClientRect();
       return rect.left - stripRect.left + rect.width / 2;
     });
-    const pitch = (centers[1] - centers[0]) / 3; // px per hour (cells are 3-hourly)
+    const pitch = (centers[1] - centers[0]) / hourlyResolution; // px per hour
     /** @param {number} i */
     const xOf = (i) => centers[0] + i * pitch;
     // Keep the curve within the cells' span so the SVG never widens the
     // scroll area. scrollWidth here is the cells-only extent (graph not yet in).
-    const maxIndex = (cells.length - 1) * 3;
+    const maxIndex = (cells.length - 1) * hourlyResolution;
     const series = hours.slice(0, maxIndex + 1);
     const contentWidth = Math.max(strip.clientWidth, strip.scrollWidth);
     strip.insertAdjacentHTML('afterbegin', metricGraphSvg(series, metric, contentWidth, xOf));
@@ -812,6 +824,7 @@ function renderHourly(hours) {
   strip.appendChild(frag);
   $('hourly-summary').textContent = summarizeHourly(hours);
   syncMetricToggle();
+  syncResolutionToggle();
   show('hourly-card');
   // The curve uses raw hourly samples for an on-the-hour resolution.
   renderHourlyGraph(strip, lastHourlyRaw, hourlyMetric, renderId);
@@ -842,6 +855,28 @@ function setMetric(metric) {
   localStorage.setItem(LS_METRIC, metric);
   if (lastHours.length) renderHourly(lastHours);
   else syncMetricToggle();
+}
+
+function syncResolutionToggle() {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('#resolution-toggle .seg-btn')).forEach((btn) => {
+    const on = Number(btn.dataset.resolution) === hourlyResolution;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+/** @param {number} size */
+function setResolution(size) {
+  if (!HOURLY_RESOLUTIONS.includes(size) || size === hourlyResolution) return;
+  hourlyResolution = size;
+  localStorage.setItem(LS_RESOLUTION, String(size));
+  // Re-block the raw samples for the view currently on screen (next-24 or a day).
+  if (lastHourlyRaw.length) {
+    lastHours = groupHours(lastHourlyRaw, hourlyResolution);
+    renderHourly(lastHours);
+  } else {
+    syncResolutionToggle();
+  }
 }
 
 /**
@@ -941,7 +976,10 @@ function renderAirQuality(aq) {
   const tile = /** @type {HTMLElement | null} */ ($('t-aqi')?.closest('.tile'));
   if (!tile) return;
   const hasAqi = Number.isFinite(aq.usAqi);
-  $('t-aqi').textContent = hasAqi ? `${Math.round(/** @type {number} */ (aq.usAqi))} (${aqiCategory(aq.usAqi)})` : '—';
+  // Match the UV tile: headline number with the category as a .tile-sub caption.
+  $('t-aqi').innerHTML = hasAqi
+    ? tileValueHtml(String(Math.round(/** @type {number} */ (aq.usAqi))), aqiCategory(aq.usAqi))
+    : '—';
   /**
    * @param {number|undefined} v
    * @param {string} suffix
@@ -1049,7 +1087,7 @@ function renderAll(data, name, updatedAt) {
   defaultDayHours = hours;          // remembered so "Back" restores the next-24h view exactly
   selectedDayIso = null;            // a fresh render resets to the default next-24h view
   lastHourlyRaw = hours;            // raw samples power the on-the-hour graph
-  lastHours = groupHours(hours, 3); // 3-hour blocks for the strip cells
+  lastHours = groupHours(hours, hourlyResolution); // blocks for the strip cells
   renderHero(data.current, data.daily, name);
   renderHourly(lastHours);
   renderDaily(data.daily, data.hourly);
@@ -1196,21 +1234,141 @@ function renderSavedBar() {
   bar.replaceChildren();
   if (!saved.length) { bar.hidden = true; return; }
   const frag = document.createDocumentFragment();
-  saved.forEach((place) => {
+  saved.forEach((place, i) => {
     const active = sameLoc(place, location_);
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'saved-chip';
     chip.setAttribute('role', 'listitem');
+    chip.setAttribute('aria-grabbed', 'false');
     chip.classList.toggle('active', /** @type {boolean} */ (active));
     chip.setAttribute('aria-current', active ? 'true' : 'false');
+    chip.dataset.savedIndex = String(i);
     chip.textContent = place.name;
     chip.title = place.name;
-    chip.addEventListener('click', () => setLocation(place));
+    chip.addEventListener('click', () => {
+      if (suppressSavedClick) {
+        suppressSavedClick = false;
+        return;
+      }
+      setLocation(place);
+    });
+    // Reordering uses Pointer Events rather than the native HTML5 drag-and-drop
+    // API: native DnD silently does nothing in Firefox here, while pointer
+    // events fire identically across Firefox/Chrome/Edge (and touch/pen).
+    chip.addEventListener('pointerdown', handleSavedPointerDown);
     frag.appendChild(chip);
   });
   bar.appendChild(frag);
   bar.hidden = false;
+}
+
+/**
+ * @param {HTMLElement} chip
+ * @returns {number}
+ */
+function savedIndexFromChip(chip) {
+  return Number(chip.dataset.savedIndex);
+}
+
+function clearSavedDragClasses() {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.saved-chip')).forEach((chip) => {
+    chip.classList.remove('dragging', 'drag-over-before', 'drag-over-after');
+    chip.setAttribute('aria-grabbed', 'false');
+  });
+}
+
+/**
+ * @param {number} from
+ * @param {number} to
+ */
+function reorderSaved(from, to) {
+  if (!Number.isInteger(from) || !Number.isInteger(to)) return;
+  if (from < 0 || from >= saved.length) return;
+  const target = Math.max(0, Math.min(saved.length - 1, to));
+  if (from === target) return;
+  const next = [...saved];
+  const [item] = next.splice(from, 1);
+  next.splice(target, 0, item);
+  saved = next;
+  persistSaved();
+  renderSavedBar();
+}
+
+// Pointer-based reordering. We track a press on a chip and only treat it as a
+// drag once the pointer travels past a small threshold, so an ordinary tap still
+// selects the location. While dragging, the chip under the pointer shows a
+// before/after insertion marker; on release we compute the target slot.
+const SAVED_DRAG_THRESHOLD = 6; // px of travel before a press becomes a drag
+
+/** @param {number} x @param {number} y @returns {HTMLElement | null} */
+function chipAtPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  return el ? /** @type {HTMLElement | null} */ (el.closest('.saved-chip')) : null;
+}
+
+function clearSavedDragOver() {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.saved-chip')).forEach((chip) => {
+    chip.classList.remove('drag-over-before', 'drag-over-after');
+  });
+}
+
+/** @param {PointerEvent} e */
+function handleSavedPointerDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return; // left button only
+  const chip = /** @type {HTMLElement | null} */ (evtEl(e).closest('.saved-chip'));
+  if (!chip || saved.length < 2) return; // nothing to reorder
+  savedDrag = { chip, fromIndex: savedIndexFromChip(chip), startX: e.clientX, pointerId: e.pointerId, dragging: false };
+  window.addEventListener('pointermove', handleSavedPointerMove);
+  window.addEventListener('pointerup', handleSavedPointerUp);
+  window.addEventListener('pointercancel', handleSavedPointerUp);
+}
+
+/** @param {PointerEvent} e */
+function handleSavedPointerMove(e) {
+  if (!savedDrag || e.pointerId !== savedDrag.pointerId) return;
+  if (!savedDrag.dragging) {
+    if (Math.abs(e.clientX - savedDrag.startX) < SAVED_DRAG_THRESHOLD) return;
+    // Promote to a drag.
+    savedDrag.dragging = true;
+    draggedSavedIndex = savedDrag.fromIndex;
+    savedDrag.chip.classList.add('dragging');
+    savedDrag.chip.setAttribute('aria-grabbed', 'true');
+  }
+  e.preventDefault();
+  clearSavedDragOver();
+  const over = chipAtPoint(e.clientX, e.clientY);
+  if (over && over !== savedDrag.chip) {
+    const rect = over.getBoundingClientRect();
+    const after = e.clientX > rect.left + rect.width / 2;
+    over.classList.toggle('drag-over-before', !after);
+    over.classList.toggle('drag-over-after', after);
+  }
+}
+
+/** @param {PointerEvent} e */
+function handleSavedPointerUp(e) {
+  if (!savedDrag || e.pointerId !== savedDrag.pointerId) return;
+  window.removeEventListener('pointermove', handleSavedPointerMove);
+  window.removeEventListener('pointerup', handleSavedPointerUp);
+  window.removeEventListener('pointercancel', handleSavedPointerUp);
+  const drag = savedDrag;
+  savedDrag = null;
+  draggedSavedIndex = null;
+  if (!drag.dragging) return; // never moved → leave the click to select the place
+  const over = e.type === 'pointercancel' ? null : chipAtPoint(e.clientX, e.clientY);
+  if (over) {
+    let to = savedIndexFromChip(over);
+    const rect = over.getBoundingClientRect();
+    if (e.clientX > rect.left + rect.width / 2) to += 1;
+    if (drag.fromIndex < to) to -= 1;
+    reorderSaved(drag.fromIndex, to); // re-renders the bar on a real change
+  }
+  // A click is synthesized after the drag's pointerup; swallow it so the drag
+  // doesn't also navigate. Reset shortly after in case no click follows.
+  suppressSavedClick = true;
+  window.setTimeout(() => { suppressSavedClick = false; }, 0);
+  clearSavedDragClasses();
 }
 
 // ---- Tap-a-day (load one day's hours into the hourly graph) ----
@@ -1253,7 +1411,7 @@ function selectDay(iso, i) {
   if (!hours.length) return;
   selectedDayIso = iso;
   lastHourlyRaw = hours;
-  lastHours = groupHours(hours, 3);
+  lastHours = groupHours(hours, hourlyResolution);
   renderHourly(lastHours);
   syncDayNote();
 }
@@ -1262,7 +1420,7 @@ function selectDay(iso, i) {
 function restoreDefaultDay() {
   selectedDayIso = null;
   lastHourlyRaw = defaultDayHours;
-  lastHours = groupHours(defaultDayHours, 3);
+  lastHours = groupHours(defaultDayHours, hourlyResolution);
   renderHourly(lastHours);
   syncDayNote();
 }
@@ -1549,6 +1707,10 @@ $('metric-toggle').addEventListener('click', (e) => {
   const btn = /** @type {HTMLElement | null} */ (evtEl(e).closest('.seg-btn'));
   if (btn) setMetric(/** @type {string} */ (btn.dataset.metric));
 });
+$('resolution-toggle').addEventListener('click', (e) => {
+  const btn = /** @type {HTMLElement | null} */ (evtEl(e).closest('.seg-btn'));
+  if (btn) setResolution(Number(btn.dataset.resolution));
+});
 document.addEventListener('click', (e) => {
   if (!evtEl(e).closest('.search')) closeResults();
   if (!evtEl(e).closest('.icon-set-control')) closeIconSetMenu();
@@ -1595,6 +1757,7 @@ setIconSetControl();
 populateModelMenu();
 setModelControl();
 syncMetricToggle();
+syncResolutionToggle();
 renderSavedBar();
 syncPinButton();
 hydrateFromCache();

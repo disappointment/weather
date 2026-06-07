@@ -479,6 +479,7 @@ button {
 }
 
 .saved-chip {
+  position: relative;
   max-width: 100%;
   padding: 6px 12px;
   color: var(--fg);
@@ -509,6 +510,36 @@ button {
 .saved-chip:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent), transparent 62%);
   outline-offset: 2px;
+}
+
+.saved-chip.dragging {
+  opacity: 0.48;
+  transform: scale(0.98);
+}
+
+.saved-chip.drag-over-before,
+.saved-chip.drag-over-after {
+  border-color: color-mix(in srgb, var(--accent), transparent 24%);
+}
+
+.saved-chip.drag-over-before::before,
+.saved-chip.drag-over-after::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 72%);
+}
+
+.saved-chip.drag-over-before::before {
+  left: -5px;
+}
+
+.saved-chip.drag-over-after::after {
+  right: -5px;
 }
 
 /* "Showing <day>" note + Back control above the hourly strip. */
@@ -564,8 +595,7 @@ button {
   min-width: 0;
   grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
   gap: 10px;
-  /* stretch so the hero card fills the full height of the tiles column beside it */
-  align-items: stretch;
+  align-items: start;
 }
 
 .hero-shell,
@@ -579,12 +609,21 @@ button {
   backdrop-filter: blur(14px) saturate(1.08);
 }
 
+.hero-shell {
+  container-type: inline-size;
+}
+
 .hero {
   min-width: 0;
-  height: 100%;
+  height: auto;
   display: grid;
+  /* Constrain the single column to the card width. Without an explicit column,
+     the implicit `auto` track sizes to the max-content of .hero-main / .hero-extra
+     (the non-wrapping hilo line + temp, and hero-extra's fixed-min columns),
+     which overflows the card and bleeds the temp/extra under the tiles. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto;
-  align-content: center;
+  align-content: start;
   gap: 12px;
   min-height: 150px;
   padding: 12px;
@@ -871,6 +910,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 10px;
 }
@@ -1384,16 +1424,16 @@ button {
 
 @media (min-width: 700px) {
   .hero {
-    min-height: clamp(250px, 30vw, 330px);
-    padding: clamp(20px, 2.8vw, 28px);
-    gap: clamp(18px, 3vw, 28px);
+    min-height: 0;
+    padding: clamp(18px, 2.4vw, 26px);
+    gap: clamp(14px, 2.2vw, 20px);
   }
 
   .hero-main {
-    width: min(100%, 900px);
+    width: min(100%, 880px);
     justify-self: center;
-    grid-template-columns: minmax(0, 1fr) minmax(260px, auto);
-    gap: clamp(26px, 6vw, 74px);
+    grid-template-columns: minmax(0, 1fr) max-content;
+    gap: clamp(20px, 6cqi, 40px);
   }
 
   .hero-copy {
@@ -1402,22 +1442,22 @@ button {
 
   .place {
     max-width: 520px;
-    font-size: clamp(18px, 2.2vw, 26px);
+    font-size: clamp(17px, 2vw, 24px);
   }
 
   .condition {
     max-width: 560px;
-    font-size: clamp(44px, 5vw, 64px);
+    font-size: clamp(40px, 4.6vw, 58px);
   }
 
   .hilo {
-    font-size: clamp(17px, 1.8vw, 22px);
+    font-size: clamp(16px, 1.7vw, 20px);
   }
 
   .refresh {
-    margin-top: 12px;
-    padding: 8px 16px;
-    font-size: 14px;
+    margin-top: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
   }
 
   .refresh-icon {
@@ -1427,13 +1467,13 @@ button {
 
   .now {
     align-self: center;
-    gap: clamp(18px, 3vw, 26px);
+    gap: clamp(14px, 2.4vw, 22px);
   }
 
   .hero-icon {
-    width: clamp(64px, 7.4vw, 82px);
-    height: clamp(64px, 7.4vw, 82px);
-    padding: 9px;
+    width: clamp(58px, 6.8vw, 76px);
+    height: clamp(58px, 6.8vw, 76px);
+    padding: 8px;
   }
 
   .hero-icon.weather-emoji {
@@ -1445,21 +1485,21 @@ button {
   }
 
   .temp {
-    font-size: clamp(86px, 9vw, 118px);
+    font-size: clamp(78px, 8.2vw, 106px);
   }
 
   .hero-extra {
-    width: min(100%, 900px);
+    width: min(100%, 880px);
     justify-self: center;
-    grid-template-columns: minmax(220px, 0.7fr) minmax(360px, 1.3fr);
+    grid-template-columns: minmax(220px, 0.72fr) minmax(320px, 1.28fr);
     align-items: center;
-    gap: clamp(18px, 3vw, 32px);
-    padding-top: 16px;
+    gap: clamp(16px, 3.5cqi, 26px);
+    padding-top: 12px;
   }
 
   .hero-extra .nowcast {
     margin: 0;
-    font-size: clamp(16px, 1.8vw, 20px);
+    font-size: clamp(15px, 1.6vw, 18px);
     font-weight: 700;
   }
 
@@ -1469,13 +1509,13 @@ button {
 
   .daylight {
     min-width: 0;
-    gap: 12px;
-    font-size: clamp(15px, 1.6vw, 18px);
+    gap: 10px;
+    font-size: clamp(14px, 1.45vw, 17px);
   }
 
   .daylight-icon {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
   }
 
   .daylight-track {

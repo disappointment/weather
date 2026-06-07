@@ -183,7 +183,12 @@
     <section class="forecast-grid">
       <section id="hourly-card" class="card hourly" hidden>
         <div class="card-head">
-          <h2 class="card-title" id="hourly-title">3-Hourly</h2>
+          <h2 class="sr-only">Hourly forecast</h2>
+          <div class="seg" id="resolution-toggle" role="group" aria-label="Forecast resolution">
+            <button class="seg-btn" type="button" data-resolution="1" aria-pressed="false">Hourly</button>
+            <button class="seg-btn" type="button" data-resolution="3" aria-pressed="true">3-Hourly</button>
+            <button class="seg-btn" type="button" data-resolution="6" aria-pressed="false">6-Hourly</button>
+          </div>
           <div class="seg" id="metric-toggle" role="group" aria-label="Graph metric">
             <button class="seg-btn" type="button" data-metric="temp" aria-pressed="true">Temp</button>
             <button class="seg-btn" type="button" data-metric="precip" aria-pressed="false">Precip</button>
