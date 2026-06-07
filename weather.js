@@ -255,6 +255,30 @@ export function describeWeather(code, isDay) {
 }
 
 /**
+ * Map a feels-like temperature to a comfort face. Driven purely by the
+ * apparent temperature; bands are unit-aware (Fahrenheit vs Celsius).
+ *
+ *   😀 comfortable : 60–78°F  / 16–26°C
+ *   😐 so-so       : 45–59°F or 79–88°F  / 7–15°C or 27–31°C
+ *   ☹️ rough       : < 45°F or > 88°F    / < 7°C or > 31°C
+ *
+ * @param {number|null|undefined} feels apparent temperature, in `unit`
+ * @param {TemperatureUnit} unit
+ * @returns {{ emoji: string, label: string } | null} null when `feels` is missing
+ */
+export function comfortFace(feels, unit) {
+  if (typeof feels !== 'number' || !Number.isFinite(feels)) return null;
+  const metric = unit === 'celsius';
+  // [happyLo, happyHi, soSoLo, soSoHi] in the active unit.
+  const [happyLo, happyHi, soSoLo, soSoHi] = metric
+    ? [16, 26, 7, 31]
+    : [60, 78, 45, 88];
+  if (feels >= happyLo && feels <= happyHi) return { emoji: '😀', label: 'comfortable' };
+  if (feels >= soSoLo && feels <= soSoHi) return { emoji: '😐', label: 'so-so' };
+  return { emoji: '☹️', label: 'rough' };
+}
+
+/**
  * Floor an ISO timestamp to the top of its hour (YYYY-MM-DDThh:00).
  * @param {string} iso
  * @returns {string}

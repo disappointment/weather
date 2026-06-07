@@ -5,7 +5,7 @@ import {
   pollenCategory, pollenSummary, goldenHour, moonPhase,
   daylightProgress, formatDuration,
   sliceDayHours, parseMinutely, nowcastText,
-  sliceNext24, groupHours,
+  sliceNext24, groupHours, comfortFace,
 } from '../weather.js';
 
 test('airQualityUrl builds an air-quality endpoint with coords and pollutants', () => {
@@ -175,6 +175,44 @@ test('groupHours leaves feels undefined when no finite samples', () => {
   const [b] = groupHours(hours, 3);
   assert.equal(b.feels, undefined);
   assert.equal(b.temp, 63);  // temps still averaged
+});
+
+// ---- comfortFace: a smiley driven purely by the feels-like temperature ----
+
+test('comfortFace is happy inside the Fahrenheit comfort band', () => {
+  assert.deepEqual(comfortFace(72, 'fahrenheit'), { emoji: '😀', label: 'comfortable' });
+  assert.equal(comfortFace(60, 'fahrenheit').emoji, '😀');   // lower edge inclusive
+  assert.equal(comfortFace(78, 'fahrenheit').emoji, '😀');   // upper edge inclusive
+});
+
+test('comfortFace is so-so in the Fahrenheit shoulder zones', () => {
+  assert.deepEqual(comfortFace(55, 'fahrenheit'), { emoji: '😐', label: 'so-so' });
+  assert.equal(comfortFace(45, 'fahrenheit').emoji, '😐');   // cool shoulder, lower edge
+  assert.equal(comfortFace(59, 'fahrenheit').emoji, '😐');   // just below happy
+  assert.equal(comfortFace(79, 'fahrenheit').emoji, '😐');   // just above happy
+  assert.equal(comfortFace(88, 'fahrenheit').emoji, '😐');   // warm shoulder, upper edge
+});
+
+test('comfortFace frowns at Fahrenheit extremes', () => {
+  assert.deepEqual(comfortFace(95, 'fahrenheit'), { emoji: '☹️', label: 'rough' });
+  assert.equal(comfortFace(44, 'fahrenheit').emoji, '☹️');   // just below so-so
+  assert.equal(comfortFace(89, 'fahrenheit').emoji, '☹️');   // just above so-so
+});
+
+test('comfortFace applies Celsius bands when the unit is celsius', () => {
+  assert.equal(comfortFace(20, 'celsius').emoji, '😀');      // comfortable
+  assert.equal(comfortFace(16, 'celsius').emoji, '😀');      // lower happy edge
+  assert.equal(comfortFace(26, 'celsius').emoji, '😀');      // upper happy edge
+  assert.equal(comfortFace(10, 'celsius').emoji, '😐');      // cool shoulder
+  assert.equal(comfortFace(30, 'celsius').emoji, '😐');      // warm shoulder
+  assert.equal(comfortFace(5, 'celsius').emoji, '☹️');       // too cold
+  assert.equal(comfortFace(35, 'celsius').emoji, '☹️');      // too hot
+});
+
+test('comfortFace returns null when the feels-like value is missing', () => {
+  assert.equal(comfortFace(undefined, 'fahrenheit'), null);
+  assert.equal(comfortFace(null, 'fahrenheit'), null);
+  assert.equal(comfortFace(NaN, 'fahrenheit'), null);
 });
 
 test('parseMinutely keeps samples at/after current time, capped to 12h', () => {

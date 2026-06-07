@@ -1,5 +1,5 @@
 import {
-  describeWeather, sliceNext24, sliceDayHours, groupHours, degToCompass, unitConfig,
+  describeWeather, comfortFace, sliceNext24, sliceDayHours, groupHours, degToCompass, unitConfig,
   rangeBar, forecastUrl, FORECAST_MODELS, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
   airQualityUrl, parseAirQuality, aqiCategory, pollenSummary,
@@ -398,14 +398,32 @@ function renderHero(cur, daily, name) {
   $('hero-icon-slot').innerHTML = weatherIconHtml(d.icon, 'hero-icon weather-icon');
   $('hero-condition').textContent = d.label;
   $('hero-feels').textContent = `Feels ${Math.round(cur.apparent_temperature)}°`;
+  // Band the same rounded value the user sees, so "Feels 88°" never sits
+  // next to a face the 88° boundary contradicts.
+  const comfort = comfortFace(Math.round(cur.apparent_temperature), unit);
+  renderComfortFace(comfort);
   $('hero-hi').textContent = `H ${Math.round(daily.temperature_2m_max[0])}°`;
   $('hero-lo').textContent = `L ${Math.round(daily.temperature_2m_min[0])}°`;
   setDetail($('hero-shell'),
-    `${name}: ${d.label}, ${Math.round(cur.temperature_2m)}° and feels like ${Math.round(cur.apparent_temperature)}°. ` +
+    `${name}: ${d.label}, ${Math.round(cur.temperature_2m)}° and feels like ${Math.round(cur.apparent_temperature)}°` +
+    `${comfort ? ` (${comfort.label})` : ''}. ` +
     `High ${Math.round(daily.temperature_2m_max[0])}°, low ${Math.round(daily.temperature_2m_min[0])}°. ` +
     `Wind ${Math.round(cur.wind_speed_10m)} ${u.windLabel} ${degToCompass(cur.wind_direction_10m)}; humidity ${cur.relative_humidity_2m}%.`);
   renderDaylight(cur, daily);
   show('hero');
+}
+
+// Comfort emoji beside "Feels X°": a quick mood read on the feels-like temp.
+// Hidden entirely when apparent temp is missing (comfortFace returns null).
+/** @param {{ emoji: string, label: string } | null} comfort */
+function renderComfortFace(comfort) {
+  const el = $('hero-comfort');
+  if (!el) return;
+  if (!comfort) { el.hidden = true; el.textContent = ''; return; }
+  el.textContent = comfort.emoji;
+  el.setAttribute('aria-label', comfort.label);
+  el.title = comfort.label;
+  el.hidden = false;
 }
 
 // Sunrise→sunset progress bar in the hero footer: the fill and marker track the
