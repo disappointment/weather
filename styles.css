@@ -492,7 +492,10 @@ button {
   border-radius: 999px;
   background: var(--field);
   box-shadow: var(--inner-shadow);
-  cursor: pointer;
+  /* grab cursor signals the chips are draggable to reorder; click still selects.
+     touch-action:none lets a touch/pen drag reorder instead of scrolling. */
+  cursor: grab;
+  touch-action: none;
   transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
 }
 
@@ -515,6 +518,7 @@ button {
 .saved-chip.dragging {
   opacity: 0.48;
   transform: scale(0.98);
+  cursor: grabbing;
 }
 
 .saved-chip.drag-over-before,
@@ -1491,7 +1495,10 @@ button {
   .hero-extra {
     width: min(100%, 880px);
     justify-self: center;
-    grid-template-columns: minmax(220px, 0.72fr) minmax(320px, 1.28fr);
+    /* Floors must be 0, not 220/320px: a 540px combined minimum is wider than
+       the hero column on mid-width screens (~760-1040px) and spills the daylight
+       row out of the card. The nowcast wraps and the daylight track flexes. */
+    grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
     align-items: center;
     gap: clamp(16px, 3.5cqi, 26px);
     padding-top: 12px;
