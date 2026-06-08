@@ -160,6 +160,8 @@ function setUnitLabel() {
 function setIconSetControl() {
   const active = ICON_SETS.has(iconSet) ? iconSet : 'illustrated';
   $('icon-set-label').textContent = /** @type {Record<string, string>} */ (ICON_SET_LABELS)[active];
+  $('icon-set-btn-icon').innerHTML = weatherIconHtml('sun', 'icon-set-preview-icon', active);
+  freezeIconMotion($('icon-set-btn-icon'));
   /** @type {NodeListOf<HTMLElement>} */ ($('icon-set-menu').querySelectorAll('[role="option"]')).forEach((option) => {
     const selected = option.dataset.iconSet === active;
     option.setAttribute('aria-selected', selected ? 'true' : 'false');
@@ -1595,11 +1597,45 @@ function toggleUnit() {
 /** @param {string | undefined} next */
 function setIconSet(next) {
   if (!ICON_SETS.has(/** @type {string} */ (next))) return;
+  iconPreviewSet = null;            // committing supersedes any hover/focus preview
   iconSet = /** @type {string} */ (next);
   localStorage.setItem(LS_ICON_SET, iconSet);
   setIconSetControl();
   closeIconSetMenu();
   if (lastData && location_) renderAll(lastData, location_.name, lastUpdatedAt);
+}
+
+// ---- Live icon-set preview ----
+// Hovering or focusing a menu option re-renders the page in that set so you can
+// try it on in context; leaving the menu (or closing it) restores the committed
+// set. The persisted selection (`iconSet`) never changes until you actually pick.
+/** @type {string | null} */
+let iconPreviewSet = null;
+
+/** @param {string} set */
+function renderIconsWithSet(set) {
+  if (!lastData || !location_) return;
+  const committed = iconSet;
+  const dayIso = selectedDayIso;   // renderAll resets to the default day; re-apply afterwards
+  iconSet = set;
+  renderAll(lastData, location_.name, lastUpdatedAt);
+  if (dayIso) selectDay(dayIso, 1);
+  iconSet = committed;
+}
+
+/** @param {string | undefined} set */
+function previewIconSet(set) {
+  if (!set || !ICON_SETS.has(set)) return;
+  if (set === iconSet) { clearIconPreview(); return; } // hovering the active set shows the committed view
+  if (set === iconPreviewSet) return;                  // already previewing it — skip the re-render
+  iconPreviewSet = set;
+  renderIconsWithSet(set);
+}
+
+function clearIconPreview() {
+  if (iconPreviewSet === null) return;
+  iconPreviewSet = null;
+  renderIconsWithSet(iconSet);
 }
 
 function openIconSetMenu() {
@@ -1610,6 +1646,7 @@ function openIconSetMenu() {
 function closeIconSetMenu() {
   $('icon-set-menu').hidden = true;
   $('icon-set-btn').setAttribute('aria-expanded', 'false');
+  clearIconPreview();              // revert any hover/focus preview when the menu goes away
 }
 
 function toggleIconSetMenu() {
@@ -1675,6 +1712,16 @@ $('icon-set-menu').addEventListener('click', (e) => {
   const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-icon-set]'));
   if (option) setIconSet(option.dataset.iconSet);
 });
+// Live preview: try a set on the whole page while pointing at / focusing its row.
+$('icon-set-menu').addEventListener('mouseover', (e) => {
+  const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-icon-set]'));
+  if (option) previewIconSet(option.dataset.iconSet);
+});
+$('icon-set-menu').addEventListener('focusin', (e) => {
+  const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-icon-set]'));
+  if (option) previewIconSet(option.dataset.iconSet);
+});
+$('icon-set-menu').addEventListener('mouseleave', clearIconPreview);
 $('icon-set-btn').addEventListener('keydown', (e) => {
   if (['ArrowDown', 'Enter', ' '].includes(e.key)) {
     e.preventDefault();
