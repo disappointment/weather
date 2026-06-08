@@ -10,7 +10,6 @@ A clean, client-side weather forecast page. Data from Open-Meteo (no API key).
 - Sun tiles: sunrise/sunset, golden-hour windows, and current moon phase.
 - RainViewer radar overlay (Leaflet) with a playable timeline.
 - Saved locations, search + geolocation, °F/°C toggle, multiple icon sets, and Auto/Light/Dark mode.
-- Installable PWA with an offline service worker (`sw.js`).
 
 ## Run locally
 The page uses ES modules, so Chrome/Edge block it over the `file://` scheme —
@@ -47,7 +46,7 @@ so the gate holds even where the local hook isn't activated.
 - `weather.js` — pure data/format helpers (fully typed; covered by tests).
 - `app.js` — DOM rendering, fetch, and app state.
 - `radar.js` — Leaflet + RainViewer radar overlay (dynamically imported).
-- `sw.js` — service worker. `types/globals.d.ts` — ambient globals (Leaflet).
+- `sw.js` — self-destruct stub that retires the removed offline service worker. `types/globals.d.ts` — ambient globals (Leaflet).
 
 ## Deploy (otter cluster)
 Files are served by nginx from a Kustomize-generated ConfigMap; Flux pulls this

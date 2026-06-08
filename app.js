@@ -1797,14 +1797,16 @@ hydrateFromCache();
 refresh();
 refreshTimer = setInterval(refresh, 15 * 60 * 1000);
 
-// ---- Service worker (offline app shell) ----
-const isLocalPreview = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-if ('serviceWorker' in navigator && !isLocalPreview) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is best-effort */ });
-  });
-} else if ('serviceWorker' in navigator && isLocalPreview) {
+// ---- Service worker removed ----
+// There is no service worker anymore. Proactively unregister any copy an earlier
+// version installed and drop its caches, so nothing keeps serving stale assets.
+// (sw.js now self-destructs too; this is the belt to that suspenders.)
+if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations()
-    .then((regs) => Promise.all(regs.map((reg) => reg.unregister())))
-    .catch(() => { /* local preview should not keep stale SW state around */ });
+    .then((regs) => regs.forEach((reg) => reg.unregister()))
+    .catch(() => { /* best effort */ });
+}
+if (window.caches) {
+  caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)))
+    .catch(() => { /* best effort */ });
 }
