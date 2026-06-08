@@ -709,12 +709,6 @@ button {
   transform: translate(-50%, -50%);
 }
 
-.daylight-len {
-  flex: none;
-  margin-left: 2px;
-  opacity: 0.85;
-}
-
 /* After sunset / before sunrise: mute the track so it doesn't imply the sun is up. */
 .daylight.is-night .daylight-fill {
   background: linear-gradient(90deg, #6b7da6, #4a5a82);

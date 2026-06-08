@@ -3,7 +3,7 @@ import {
   rangeBar, forecastUrl, FORECAST_MODELS, geocodeUrl, reverseGeocodeUrl, parsePlaces,
   parseLocationParams, locationQuery,
   airQualityUrl, parseAirQuality, aqiCategory, pollenSummary,
-  goldenHour, moonPhase, daylightProgress, formatDuration,
+  goldenHour, moonPhase, daylightProgress,
   parseMinutely, nowcastText,
 } from './weather.js';
 
@@ -455,7 +455,6 @@ function renderDaylight(cur, daily) {
   $('daylight-set').textContent = formatClock(set);
   $('daylight-fill').style.width = pct;
   $('daylight-dot').style.left = pct;
-  $('daylight-len').textContent = formatDuration(dl.dayLengthMin);
   el.classList.toggle('is-night', !dl.isDaytime);
   el.hidden = false;
 }
@@ -936,8 +935,6 @@ function renderTiles(cur, daily, firstHour) {
   $('t-uv').innerHTML = Number.isFinite(uvVal)
     ? tileValueHtml(String(Math.round(/** @type {number} */ (uvVal))), uvCategory(uvVal))
     : '—';
-  $('t-sunrise').textContent = formatClock(daily.sunrise[0]);
-  $('t-sunset').textContent = formatClock(daily.sunset[0]);
   $('t-pressure').textContent = `${Math.round(cur.surface_pressure)} hPa`;
   $('t-visibility').textContent = firstHour
     ? `${u.distanceFrom(firstHour.visibility)} ${u.distanceLabel}` : '—';
@@ -947,8 +944,6 @@ function renderTiles(cur, daily, firstHour) {
     `Relative humidity is ${cur.relative_humidity_2m}%; higher values make warm air feel heavier.`);
   setDetail($('t-uv').closest('.tile'),
     `UV index is ${formatUv(firstHour ? firstHour.uv : daily.uv_index_max[0])}; stronger sun exposure needs more protection.`);
-  setDetail($('t-sunrise').closest('.tile'), `Sunrise today is ${formatClock(daily.sunrise[0])}.`);
-  setDetail($('t-sunset').closest('.tile'), `Sunset today is ${formatClock(daily.sunset[0])}.`);
 
   const golden = goldenHour(daily.sunrise[0], daily.sunset[0]);
   $('t-golden').innerHTML = tileValueHtml(
