@@ -176,6 +176,7 @@ function renderIconSetPreviews() {
       slot.innerHTML = weatherIconHtml('sun', 'icon-set-preview-icon', option.dataset.iconSet);
     }
   });
+  freezeIconMotion($('icon-set-menu'));
 }
 
 // The model menu is data-driven from FORECAST_MODELS so the list lives in one
@@ -329,6 +330,17 @@ function weatherIconHtml(name, className = 'weather-icon', set = iconSet) {
   const svg = /** @type {Record<string, {prefix: string, box: string, cls: string}>} */ (SVG_SETS)[set]
     || SVG_SETS.illustrated;
   return wrap(`<svg viewBox="${svg.box}"><use href="#${svg.prefix}${name}"></use></svg>`, svg.cls);
+}
+
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+// The Meteocons set animates via SVG SMIL, which CSS prefers-reduced-motion can't
+// touch. Freeze each rendered icon's animation timeline at its first frame instead.
+/** @param {ParentNode} [root] */
+function freezeIconMotion(root = document) {
+  if (!reducedMotion.matches) return;
+  root.querySelectorAll('.weather-icon-box > svg').forEach((svg) => {
+    /** @type {SVGSVGElement} */ (svg).pauseAnimations?.();
+  });
 }
 
 /** @param {string} iso */
@@ -1107,6 +1119,7 @@ function renderAll(data, name, updatedAt) {
   showStatus('');
   setUpdated(lastUpdatedAt);
   showRadar(location_);             // lazy radar reveal/center (online-only, self-guarded)
+  freezeIconMotion();               // honor prefers-reduced-motion for animated (Meteocons) icons
 }
 
 // ---- Data flow ----

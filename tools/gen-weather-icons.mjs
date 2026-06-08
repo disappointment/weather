@@ -49,17 +49,35 @@ function get(url) {
   });
 }
 
-function parse(svg) {
+function parse(svg, label) {
   const open = svg.match(/<svg\b([^>]*)>/i);
+  const close = svg.lastIndexOf('</svg>');
+  if (!open || close === -1) throw new Error(`${label}: no <svg>…</svg> in source (CDN format changed?)`);
   const vb = (open[1].match(/viewBox\s*=\s*"([^"]*)"/i) || [])[1] || '0 0 24 24';
   const pres = [];
   for (const p of PRES) {
     const m = open[1].match(new RegExp(`(?:^|\\s)${p}\\s*=\\s*"([^"]*)"`, 'i'));
     if (m) pres.push(`${p}="${m[1]}"`);
   }
-  let inner = svg.slice(svg.indexOf('>', open.index) + 1);
-  inner = inner.slice(0, inner.lastIndexOf('</svg>'));
-  return { vb, pres: pres.join(' '), inner: inner.trim() };
+  const inner = svg.slice(svg.indexOf('>', open.index) + 1, close).trim();
+  sanitize(inner, label);
+  return { vb, pres: pres.join(' '), inner };
+}
+
+// These are trusted icon libraries, but they're fetched fresh from a CDN and the
+// result is committed verbatim into index.html. Refuse to inject anything that
+// could execute or phone home, so a compromised package fails the build loudly.
+function sanitize(inner, label) {
+  const danger = [
+    [/<script\b/i, '<script>'],
+    [/<foreignObject\b/i, '<foreignObject>'],
+    [/\son\w+\s*=/i, 'inline event handler'],
+    [/javascript:/i, 'javascript: URL'],
+    [/(?:xlink:href|href)\s*=\s*"(?!#)/i, 'external href (only #local refs allowed)'],
+  ];
+  for (const [re, what] of danger) {
+    if (re.test(inner)) throw new Error(`${label}: refusing unsafe SVG content (${what})`);
+  }
 }
 
 // Namespace every internal id (defs gradients/clips) so symbols don't collide in one document.
@@ -76,7 +94,7 @@ for (const [set, cfg] of Object.entries(MAP)) {
   for (const c of COND) {
     const url = cfg.base + cfg.names[c] + cfg.ext;
     const raw = await get(url);
-    const { vb, pres, inner: rawInner } = parse(raw);
+    const { vb, pres, inner: rawInner } = parse(raw, `${set}/${c}`);
     const inner = set === 'meteo' ? namespace(rawInner, `m-${c}-`) : rawInner;
     // Erik Flowers' SVGs ship without a fill, so force currentColor to theme them.
     const force = set === 'wi' && !/fill="/.test(pres) ? 'fill="currentColor"' : '';
