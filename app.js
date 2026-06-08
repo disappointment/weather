@@ -96,6 +96,8 @@ let unit = localStorage.getItem(LS_UNIT) === 'celsius' ? 'celsius' : 'fahrenheit
 let iconSet = localStorage.getItem(LS_ICON_SET) || 'illustrated';
 // The old unicode "line" set was replaced by the Lucide SVG set under a new key.
 if (iconSet === 'line') iconSet = 'lucide';
+// Retired sets fall back to the default so a stale preference doesn't dead-end.
+if (iconSet === 'phosphor' || iconSet === 'mono') iconSet = 'illustrated';
 const MODEL_VALUES = new Set(FORECAST_MODELS.map((m) => m.value));
 const storedModel = localStorage.getItem(LS_MODEL);
 let model = storedModel && MODEL_VALUES.has(storedModel) ? storedModel : 'best_match';
@@ -265,18 +267,17 @@ darkMql.addEventListener('change', () => {
 
 /** @param {string} name */
 const ICON_SETS = new Set([
-  'illustrated', 'meteo', 'emoji', 'vivid', 'lucide', 'phosphor', 'tabler', 'wi', 'mono',
+  'illustrated', 'meteo', 'meteoline', 'emoji', 'vivid', 'lucide', 'tabler', 'wi',
 ]);
 // SVG icon sets resolve to sprite symbols by id prefix. Each set keeps its source
 // viewBox; monochrome sets reuse the mono treatment (themed currentColor, no shadow).
 const SVG_SETS = {
   illustrated: { prefix: 'icon-', box: '0 0 24 24', cls: '' },
   meteo: { prefix: 'icon-meteo-', box: '0 0 64 64', cls: '' },
+  meteoline: { prefix: 'icon-meteoline-', box: '0 0 64 64', cls: '' },
   lucide: { prefix: 'icon-lucide-', box: '0 0 24 24', cls: ' weather-icon-mono' },
-  phosphor: { prefix: 'icon-phosphor-', box: '0 0 256 256', cls: ' weather-icon-mono' },
   tabler: { prefix: 'icon-tabler-', box: '0 0 24 24', cls: ' weather-icon-mono' },
   wi: { prefix: 'icon-wi-', box: '0 0 30 30', cls: ' weather-icon-mono' },
-  mono: { prefix: 'icon-mono-', box: '0 0 24 24', cls: ' weather-icon-mono' },
 };
 const EMOJI_ICON = {
   sun: '☀️',
@@ -303,13 +304,12 @@ const VIVID_ICON = {
 const ICON_SET_LABELS = {
   illustrated: 'Illustrated',
   meteo: 'Meteocons',
+  meteoline: 'Meteocons Line',
   emoji: 'Emoji',
   vivid: 'Vivid',
   lucide: 'Lucide',
-  phosphor: 'Phosphor',
   tabler: 'Tabler',
   wi: 'Weather Icons',
-  mono: 'Mono',
 };
 
 /**

@@ -18,16 +18,16 @@ const MAP = {
   lucide: { base: 'https://cdn.jsdelivr.net/npm/lucide-static/icons/', ext: '.svg', names: {
     sun: 'sun', moon: 'moon', 'partly-day': 'cloud-sun', 'partly-night': 'cloud-moon',
     cloud: 'cloud', rain: 'cloud-rain', snow: 'cloud-snow', fog: 'cloud-fog', thunder: 'cloud-lightning' } },
-  phosphor: { base: 'https://cdn.jsdelivr.net/npm/@phosphor-icons/core/assets/regular/', ext: '.svg', names: {
-    sun: 'sun', moon: 'moon', 'partly-day': 'cloud-sun', 'partly-night': 'cloud-moon',
-    cloud: 'cloud', rain: 'cloud-rain', snow: 'cloud-snow', fog: 'cloud-fog', thunder: 'cloud-lightning' } },
   tabler: { base: 'https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/', ext: '.svg', names: {
     sun: 'sun', moon: 'moon', 'partly-day': 'cloud', 'partly-night': 'cloud',
     cloud: 'cloud', rain: 'cloud-rain', snow: 'cloud-snow', fog: 'cloud-fog', thunder: 'cloud-storm' } },
   wi: { base: 'https://cdn.jsdelivr.net/gh/erikflowers/weather-icons@master/svg/', ext: '.svg', names: {
     sun: 'wi-day-sunny', moon: 'wi-night-clear', 'partly-day': 'wi-day-cloudy', 'partly-night': 'wi-night-alt-cloudy',
     cloud: 'wi-cloudy', rain: 'wi-rain', snow: 'wi-snow', fog: 'wi-fog', thunder: 'wi-thunderstorm' } },
-  meteo: { base: 'https://cdn.jsdelivr.net/gh/basmilius/weather-icons@v2.0.0/production/fill/all/', ext: '.svg', names: {
+  meteo: { base: 'https://cdn.jsdelivr.net/gh/basmilius/weather-icons@v2.0.0/production/fill/all/', ext: '.svg', ns: true, names: {
+    sun: 'clear-day', moon: 'clear-night', 'partly-day': 'partly-cloudy-day', 'partly-night': 'partly-cloudy-night',
+    cloud: 'cloudy', rain: 'rain', snow: 'snow', fog: 'fog', thunder: 'thunderstorms' } },
+  meteoline: { base: 'https://cdn.jsdelivr.net/gh/basmilius/weather-icons@v2.0.0/production/line/all/', ext: '.svg', ns: true, names: {
     sun: 'clear-day', moon: 'clear-night', 'partly-day': 'partly-cloudy-day', 'partly-night': 'partly-cloudy-night',
     cloud: 'cloudy', rain: 'rain', snow: 'snow', fog: 'fog', thunder: 'thunderstorms' } },
 };
@@ -95,7 +95,8 @@ for (const [set, cfg] of Object.entries(MAP)) {
     const url = cfg.base + cfg.names[c] + cfg.ext;
     const raw = await get(url);
     const { vb, pres, inner: rawInner } = parse(raw, `${set}/${c}`);
-    const inner = set === 'meteo' ? namespace(rawInner, `m-${c}-`) : rawInner;
+    // Per-set-unique prefix so Meteocons fill and line gradients don't collide.
+    const inner = cfg.ns ? namespace(rawInner, `${set}-${c}-`) : rawInner;
     // Erik Flowers' SVGs ship without a fill, so force currentColor to theme them.
     const force = set === 'wi' && !/fill="/.test(pres) ? 'fill="currentColor"' : '';
     const attrs = [`id="icon-${set}-${c}"`, `viewBox="${vb}"`, force, pres].filter(Boolean).join(' ');
