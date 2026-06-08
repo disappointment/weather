@@ -94,6 +94,8 @@ const LS_MODEL = 'weather.model';
 /** @type {import('./weather.js').TemperatureUnit} */
 let unit = localStorage.getItem(LS_UNIT) === 'celsius' ? 'celsius' : 'fahrenheit';
 let iconSet = localStorage.getItem(LS_ICON_SET) || 'illustrated';
+// The old unicode "line" set was replaced by the Lucide SVG set under a new key.
+if (iconSet === 'line') iconSet = 'lucide';
 const MODEL_VALUES = new Set(FORECAST_MODELS.map((m) => m.value));
 const storedModel = localStorage.getItem(LS_MODEL);
 let model = storedModel && MODEL_VALUES.has(storedModel) ? storedModel : 'best_match';
@@ -162,6 +164,17 @@ function setIconSetControl() {
     const selected = option.dataset.iconSet === active;
     option.setAttribute('aria-selected', selected ? 'true' : 'false');
     option.classList.toggle('active', selected);
+  });
+}
+
+// Fill each menu option with a small sun glyph rendered in *its own* set, so the
+// list previews what you're choosing. Runs once — the previews never change.
+function renderIconSetPreviews() {
+  /** @type {NodeListOf<HTMLElement>} */ ($('icon-set-menu').querySelectorAll('[role="option"]')).forEach((option) => {
+    const slot = option.querySelector('.icon-set-preview');
+    if (slot && option.dataset.iconSet) {
+      slot.innerHTML = weatherIconHtml('sun', 'icon-set-preview-icon', option.dataset.iconSet);
+    }
   });
 }
 
@@ -248,9 +261,20 @@ darkMql.addEventListener('change', () => {
 });
 
 /** @param {string} name */
-function iconHref(name) { return `#icon-${name}`; }
-
-const ICON_SETS = new Set(['illustrated', 'emoji', 'line', 'mono', 'vivid']);
+const ICON_SETS = new Set([
+  'illustrated', 'meteo', 'emoji', 'vivid', 'lucide', 'phosphor', 'tabler', 'wi', 'mono',
+]);
+// SVG icon sets resolve to sprite symbols by id prefix. Each set keeps its source
+// viewBox; monochrome sets reuse the mono treatment (themed currentColor, no shadow).
+const SVG_SETS = {
+  illustrated: { prefix: 'icon-', box: '0 0 24 24', cls: '' },
+  meteo: { prefix: 'icon-meteo-', box: '0 0 64 64', cls: '' },
+  lucide: { prefix: 'icon-lucide-', box: '0 0 24 24', cls: ' weather-icon-mono' },
+  phosphor: { prefix: 'icon-phosphor-', box: '0 0 256 256', cls: ' weather-icon-mono' },
+  tabler: { prefix: 'icon-tabler-', box: '0 0 24 24', cls: ' weather-icon-mono' },
+  wi: { prefix: 'icon-wi-', box: '0 0 30 30', cls: ' weather-icon-mono' },
+  mono: { prefix: 'icon-mono-', box: '0 0 24 24', cls: ' weather-icon-mono' },
+};
 const EMOJI_ICON = {
   sun: '☀️',
   moon: '🌙',
@@ -273,48 +297,38 @@ const VIVID_ICON = {
   fog: '🌫️',
   thunder: '⛈️',
 };
-const LINE_ICON = {
-  sun: '☼',
-  moon: '☾',
-  'partly-day': '◐',
-  'partly-night': '◑',
-  cloud: '☁',
-  rain: '☔',
-  snow: '✻',
-  fog: '≋',
-  thunder: 'ϟ',
-};
 const ICON_SET_LABELS = {
   illustrated: 'Illustrated',
+  meteo: 'Meteocons',
   emoji: 'Emoji',
-  line: 'Line',
-  mono: 'Mono',
   vivid: 'Vivid',
+  lucide: 'Lucide',
+  phosphor: 'Phosphor',
+  tabler: 'Tabler',
+  wi: 'Weather Icons',
+  mono: 'Mono',
 };
 
 /**
  * @param {string} name
  * @param {string} [className]
+ * @param {string} [set] icon set to render; defaults to the active one
  */
-function weatherIconHtml(name, className = 'weather-icon') {
+function weatherIconHtml(name, className = 'weather-icon', set = iconSet) {
   /**
    * @param {string} inner
    * @param {string} [extra]
    */
   const wrap = (inner, extra = '') => `<span class="${className} weather-icon-box${extra}" data-icon="${name}" aria-hidden="true">${inner}</span>`;
-  if (iconSet === 'emoji') {
+  if (set === 'emoji') {
     return wrap(`<span class="weather-emoji">${/** @type {Record<string, string>} */ (EMOJI_ICON)[name] || '☁️'}</span>`);
   }
-  if (iconSet === 'vivid') {
+  if (set === 'vivid') {
     return wrap(`<span class="weather-emoji">${/** @type {Record<string, string>} */ (VIVID_ICON)[name] || '☁️'}</span>`);
   }
-  if (iconSet === 'line') {
-    return wrap(`<span class="weather-line">${/** @type {Record<string, string>} */ (LINE_ICON)[name] || '☁'}</span>`);
-  }
-  if (iconSet === 'mono') {
-    return wrap(`<svg viewBox="0 0 24 24"><use href="${iconHref(`mono-${name}`)}"></use></svg>`, ' weather-icon-mono');
-  }
-  return wrap(`<svg viewBox="0 0 24 24"><use href="${iconHref(name)}"></use></svg>`);
+  const svg = /** @type {Record<string, {prefix: string, box: string, cls: string}>} */ (SVG_SETS)[set]
+    || SVG_SETS.illustrated;
+  return wrap(`<svg viewBox="${svg.box}"><use href="#${svg.prefix}${name}"></use></svg>`, svg.cls);
 }
 
 /** @param {string} iso */
@@ -1759,6 +1773,7 @@ setUnitLabel();
 setSchemeControl();
 applyScheme();
 setIconSetControl();
+renderIconSetPreviews();
 populateModelMenu();
 setModelControl();
 syncMetricToggle();

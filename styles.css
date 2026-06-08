@@ -408,6 +408,8 @@ button {
   right: 0;
   z-index: 30;
   width: 150px;
+  max-height: min(60vh, 340px);
+  overflow-y: auto;
   padding: 5px;
   border: 1px solid var(--card-border);
   border-radius: 8px;
@@ -416,6 +418,9 @@ button {
 }
 
 .icon-set-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   width: 100%;
   min-height: 34px;
   padding: 0 9px;
@@ -427,6 +432,21 @@ button {
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
+}
+
+.icon-set-preview {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+
+.icon-set-preview-icon {
+  width: 22px;
+  height: 22px;
+  font-size: 19px;
+  overflow: visible;
 }
 
 .icon-set-menu button:hover,
@@ -772,8 +792,7 @@ button {
 }
 
 .weather-icon-box,
-.weather-emoji,
-.weather-line {
+.weather-emoji {
   display: inline-grid;
   place-items: center;
   line-height: 1;
@@ -813,18 +832,8 @@ button {
   font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
 }
 
-.weather-line {
-  color: var(--fg);
-  font-family: Georgia, "Times New Roman", serif;
-  font-weight: 800;
-}
-
 .hero-icon.weather-emoji {
   font-size: 35px;
-}
-
-.hero-icon.weather-line {
-  font-size: 42px;
 }
 
 .temp {
@@ -1113,11 +1122,6 @@ button {
   font-size: 33px;
 }
 
-.hour .weather-line {
-  font-size: 39px;
-  filter: none;
-}
-
 /* Mono set: theme-tinted outlines, no colored drop-shadow. */
 .weather-icon-box.weather-icon-mono {
   filter: none;
@@ -1188,11 +1192,6 @@ button {
 
 .day-row .weather-emoji {
   font-size: 32px;
-}
-
-.day-row .weather-line {
-  font-size: 38px;
-  filter: none;
 }
 
 .day-row .d-precip {
@@ -1488,10 +1487,6 @@ button {
     font-size: clamp(50px, 11.9cqi, 72px);
   }
 
-  .hero-icon.weather-line {
-    font-size: clamp(56px, 13.1cqi, 80px);
-  }
-
   .temp {
     font-size: clamp(64px, 15cqi, 104px);
   }
@@ -1586,10 +1581,6 @@ button {
 
   .day-row .weather-emoji {
     font-size: 45px;
-  }
-
-  .day-row .weather-line {
-    font-size: 51px;
   }
 
   .day-row .d-precip {
