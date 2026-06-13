@@ -1679,6 +1679,17 @@ function setModel(next) {
 let modelPreview = null;
 /** @type {AbortController | null} */
 let modelPreviewController = null;
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let modelPreviewTimer;
+
+// Sweeping the menu fires one of these per row the pointer crosses. A settle
+// delay means only the source you actually pause on fetches and re-renders, so
+// the layout doesn't thrash with a repaint per row on the way there.
+/** @param {string | undefined} value */
+function scheduleModelPreview(value) {
+  clearTimeout(modelPreviewTimer);
+  modelPreviewTimer = setTimeout(() => previewModel(value), 140);
+}
 
 /** @param {string | undefined} value */
 async function previewModel(value) {
@@ -1704,6 +1715,7 @@ async function previewModel(value) {
 }
 
 function clearModelPreview() {
+  clearTimeout(modelPreviewTimer);   // cancel a pending preview that never settled
   if (modelPreview === null) return;
   modelPreview = null;
   modelPreviewController?.abort();
@@ -1804,11 +1816,11 @@ $('model-menu').addEventListener('click', (e) => {
 // Live preview: try a datasource on the whole page while pointing at / focusing its row.
 $('model-menu').addEventListener('mouseover', (e) => {
   const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-model]'));
-  if (option) previewModel(option.dataset.model);
+  if (option) scheduleModelPreview(option.dataset.model);
 });
 $('model-menu').addEventListener('focusin', (e) => {
   const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-model]'));
-  if (option) previewModel(option.dataset.model);
+  if (option) scheduleModelPreview(option.dataset.model);
 });
 $('model-menu').addEventListener('mouseleave', clearModelPreview);
 $('model-btn').addEventListener('keydown', (e) => {
