@@ -1285,12 +1285,25 @@ button {
   font-size: 20px;
   font-weight: 760;
   line-height: 1.12;
-  overflow-wrap: break-word;
+  /* Keep the headline to a single line: switching datasources swaps these values
+     live, and a longer reading (e.g. a gusty wind direction) wrapping to two lines
+     would grow the tile and jolt the whole grid. Ellipsis is a graceful last
+     resort on the narrowest tiles; real readings fit. The .tile-sub below sits on
+     its own line via display:block, so it's unaffected. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Reserve room for the optional .tile-sub line (≈ one 20px value line + one
+     11px sub line) so a tile whose provider lacks the datapoint — UV shows a
+     bare "—" with no sub — stays the same height as one that has it. Without
+     this the grid row resizes as you preview datasources and the squares jump. */
+  min-height: 37px;
 }
 
 /* Secondary qualifier under a tile's primary value (UV band, golden-hour end,
    moon-phase name). Smaller so the headline stays prominent and long words
-   never have to break mid-word in a narrow tile. */
+   never have to break mid-word in a narrow tile. white-space resets the
+   nowrap inherited from .tile-value — only the headline must stay one line. */
 .tile-sub {
   display: block;
   margin-top: 2px;
@@ -1298,6 +1311,7 @@ button {
   font-weight: 700;
   line-height: 1.15;
   color: var(--muted);
+  white-space: normal;
 }
 
 .status,
