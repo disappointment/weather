@@ -198,8 +198,10 @@ function populateModelMenu() {
   $('model-menu').replaceChildren(frag);
 }
 
-function setModelControl() {
-  const active = MODEL_VALUES.has(model) ? model : 'best_match';
+/** @param {string} [override] highlight this value instead of the committed `model` (used while previewing) */
+function setModelControl(override) {
+  const value = override || model;
+  const active = MODEL_VALUES.has(value) ? value : 'best_match';
   $('model-label').textContent = FORECAST_MODELS.find((m) => m.value === active)?.label || 'Best match';
   /** @type {NodeListOf<HTMLElement>} */ ($('model-menu').querySelectorAll('[role="option"]')).forEach((option) => {
     const selected = option.dataset.model === active;
@@ -1657,11 +1659,57 @@ function toggleIconSetMenu() {
 /** @param {string | undefined} next */
 function setModel(next) {
   if (!next || !MODEL_VALUES.has(next)) return;
+  modelPreview = null;               // committing supersedes any hover/focus preview
+  modelPreviewController?.abort();
   model = next;
   localStorage.setItem(LS_MODEL, model);
   setModelControl();
   closeModelMenu();
   refresh(); // a different model is a different data source, so re-fetch
+}
+
+// ---- Live datasource preview ----
+// Hovering or focusing a model option fetches that source and paints the page with
+// it so you can compare datasources in place; leaving the menu (or closing it)
+// restores the committed model's data. The persisted selection (`model`) only
+// changes when you actually click — mirrors the icon-set preview, but a datasource
+// swap needs a network round-trip, so each hover gets its own abort controller and
+// rapid hovers cancel the ones before them.
+/** @type {string | null} */
+let modelPreview = null;
+/** @type {AbortController | null} */
+let modelPreviewController = null;
+
+/** @param {string | undefined} value */
+async function previewModel(value) {
+  if (!value || !MODEL_VALUES.has(value) || !location_) return;
+  if (value === model) { clearModelPreview(); return; } // hovering the active model shows the committed view
+  if (value === modelPreview) return;                   // already previewing it — skip the re-fetch
+  modelPreview = value;
+  setModelControl(value);            // reflect the pending source on the trigger + menu highlight
+  modelPreviewController?.abort();
+  modelPreviewController = new AbortController();
+  const { signal } = modelPreviewController;
+  const committedUpdatedAt = lastUpdatedAt;
+  try {
+    const res = await fetch(forecastUrl(location_.lat, location_.lon, unit, value), { signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (modelPreview !== value) return;          // a newer hover (or a commit) superseded this one
+    renderAll(data, location_.name, new Date());
+  } catch (err) {
+    if (/** @type {Error} */ (err).name === 'AbortError') return;
+    lastUpdatedAt = committedUpdatedAt;          // failed preview: leave the committed view untouched
+  }
+}
+
+function clearModelPreview() {
+  if (modelPreview === null) return;
+  modelPreview = null;
+  modelPreviewController?.abort();
+  modelPreviewController = null;
+  setModelControl();                 // restore the committed model on the trigger + highlight
+  if (lastData && location_) renderAll(lastData, location_.name, lastUpdatedAt);
 }
 
 function openModelMenu() {
@@ -1672,6 +1720,7 @@ function openModelMenu() {
 function closeModelMenu() {
   $('model-menu').hidden = true;
   $('model-btn').setAttribute('aria-expanded', 'false');
+  clearModelPreview();               // revert any hover/focus preview when the menu goes away
 }
 
 function toggleModelMenu() {
@@ -1752,6 +1801,16 @@ $('model-menu').addEventListener('click', (e) => {
   const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-model]'));
   if (option) setModel(option.dataset.model);
 });
+// Live preview: try a datasource on the whole page while pointing at / focusing its row.
+$('model-menu').addEventListener('mouseover', (e) => {
+  const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-model]'));
+  if (option) previewModel(option.dataset.model);
+});
+$('model-menu').addEventListener('focusin', (e) => {
+  const option = /** @type {HTMLElement | null} */ (evtEl(e).closest('[data-model]'));
+  if (option) previewModel(option.dataset.model);
+});
+$('model-menu').addEventListener('mouseleave', clearModelPreview);
 $('model-btn').addEventListener('keydown', (e) => {
   if (['ArrowDown', 'Enter', ' '].includes(e.key)) {
     e.preventDefault();
